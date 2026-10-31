@@ -1,0 +1,15 @@
+BEGIN;
+DROP TABLE certificate_listings;
+DROP TABLE certificate_logs;
+DROP TABLE certificates;
+DROP FUNCTION protect_certificate_snapshot();
+DROP TABLE device_status;
+DROP TABLE device_specs;
+DROP TABLE log_anchors;
+DROP TABLE device_logs;
+DROP FUNCTION reject_evidence_change();
+DROP TABLE anchors;
+DROP TABLE device_keys;
+DROP TABLE devices;
+DROP TABLE shops;
+COMMIT;

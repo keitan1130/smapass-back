@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "sequence": 1,
+      "type": "status",
+      "collected_at": "2026-04-06T00:00:00Z",
+      "canonical_payload": "{\"collected_at\":\"2026-04-06T00:00:00Z\",\"device_ref\":\"demo-device\",\"measurements\":{\"battery_charge_mah\":1097,\"battery_cycle_count\":43,\"battery_full_charge_mah\":4485,\"battery_temp_c\":31.2,\"boot_count\":20,\"had_abnormal_exit\":false,\"os_version\":\"15\",\"sdk_int\":35,\"thermal_headroom\":0.26},\"prev_hash\":null,\"schema_version\":1,\"seq\":1,\"type\":\"status\"}",
+      "payload_hash": "5cd77ecedd912cdaae2028eddda80c6483db45aabf30423f84fc0560f33d704a",
+      "previous_hash": null,
+      "signature_base64": "REVNTy1JTlZBTElELVNJR05BVFVSRQ==",
+      "public_key": "DEMO-NOT-A-PUBLIC-KEY",
+      "signature_algorithm": "demo-not-a-signature",
+      "canonicalization": "demo-json-sort-v1",
+      "anchor_state": "unanchored",
+      "chain": null,
+      "transaction_hash": null,
+      "merkle_root": null,
+      "leaf_index": null,
+      "merkle_proof": []
+    }
+  ],
+  "total": 28,
+  "limit": 1,
+  "offset": 0
+}

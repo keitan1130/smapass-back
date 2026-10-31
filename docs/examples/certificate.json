@@ -1,0 +1,577 @@
+{
+  "number": "01ABCDEFGH",
+  "status": "valid",
+  "successor_number": null,
+  "issued_at": "2026-10-20T00:00:00Z",
+  "is_demo": true,
+  "snapshot": {
+    "schema_version": 1,
+    "device": {
+      "manufacturer": "Google",
+      "model": "Pixel 8",
+      "device_name": "shiba",
+      "soc": "Google Tensor G3",
+      "cpu_cores": 9,
+      "ram_bytes": 8589934592,
+      "storage_bytes": 137438953472,
+      "screen_size_inch": 6.2,
+      "screen_density_dpi": 428,
+      "os_version": "16",
+      "sdk_int": 36,
+      "collected_at": "2026-04-06T00:00:00Z"
+    },
+    "grade": {
+      "value": "A",
+      "label": "良好（デモ）",
+      "explanation": "画面表示確認用の仮評価です。評価算出・署名検証・チェーン照合は実装していません。",
+      "algorithm_version": "demo-v1",
+      "items": [
+        {
+          "name": "battery",
+          "value": "A",
+          "explanation": "表示確認用のサンプルです。実端末の評価ではありません。"
+        }
+      ]
+    },
+    "recording": {
+      "started_at": "2026-04-06T00:00:00Z",
+      "ended_at": "2026-10-12T00:00:00Z",
+      "count": 28,
+      "gap_threshold_seconds": null,
+      "gaps": []
+    },
+    "battery": {
+      "latest_full_charge_mah": 4383,
+      "initial_full_charge_mah": 4485,
+      "change_percent": -2.3,
+      "cycle_count": 167,
+      "trend": [
+        {
+          "collected_at": "2026-04-06T00:00:00Z",
+          "full_charge_mah": 4485,
+          "temperature_c": 31.2
+        },
+        {
+          "collected_at": "2026-04-13T00:00:00Z",
+          "full_charge_mah": 4481,
+          "temperature_c": 32.3
+        },
+        {
+          "collected_at": "2026-04-20T00:00:00Z",
+          "full_charge_mah": 4477,
+          "temperature_c": 33.4
+        },
+        {
+          "collected_at": "2026-04-27T00:00:00Z",
+          "full_charge_mah": 4474,
+          "temperature_c": 34.5
+        },
+        {
+          "collected_at": "2026-05-04T00:00:00Z",
+          "full_charge_mah": 4470,
+          "temperature_c": 35.6
+        },
+        {
+          "collected_at": "2026-05-11T00:00:00Z",
+          "full_charge_mah": 4466,
+          "temperature_c": 31.2
+        },
+        {
+          "collected_at": "2026-05-18T00:00:00Z",
+          "full_charge_mah": 4462,
+          "temperature_c": 32.3
+        },
+        {
+          "collected_at": "2026-05-25T00:00:00Z",
+          "full_charge_mah": 4459,
+          "temperature_c": 33.4
+        },
+        {
+          "collected_at": "2026-06-01T00:00:00Z",
+          "full_charge_mah": 4455,
+          "temperature_c": 34.5
+        },
+        {
+          "collected_at": "2026-06-08T00:00:00Z",
+          "full_charge_mah": 4451,
+          "temperature_c": 35.6
+        },
+        {
+          "collected_at": "2026-06-15T00:00:00Z",
+          "full_charge_mah": 4447,
+          "temperature_c": 31.2
+        },
+        {
+          "collected_at": "2026-06-22T00:00:00Z",
+          "full_charge_mah": 4443,
+          "temperature_c": 32.3
+        },
+        {
+          "collected_at": "2026-06-29T00:00:00Z",
+          "full_charge_mah": 4440,
+          "temperature_c": 33.4
+        },
+        {
+          "collected_at": "2026-07-06T00:00:00Z",
+          "full_charge_mah": 4436,
+          "temperature_c": 34.5
+        },
+        {
+          "collected_at": "2026-07-13T00:00:00Z",
+          "full_charge_mah": 4432,
+          "temperature_c": 35.6
+        },
+        {
+          "collected_at": "2026-07-20T00:00:00Z",
+          "full_charge_mah": 4428,
+          "temperature_c": 31.2
+        },
+        {
+          "collected_at": "2026-07-27T00:00:00Z",
+          "full_charge_mah": 4425,
+          "temperature_c": 32.3
+        },
+        {
+          "collected_at": "2026-08-03T00:00:00Z",
+          "full_charge_mah": 4421,
+          "temperature_c": 33.4
+        },
+        {
+          "collected_at": "2026-08-10T00:00:00Z",
+          "full_charge_mah": 4417,
+          "temperature_c": 34.5
+        },
+        {
+          "collected_at": "2026-08-17T00:00:00Z",
+          "full_charge_mah": 4413,
+          "temperature_c": 35.6
+        },
+        {
+          "collected_at": "2026-08-24T00:00:00Z",
+          "full_charge_mah": 4409,
+          "temperature_c": 31.2
+        },
+        {
+          "collected_at": "2026-08-31T00:00:00Z",
+          "full_charge_mah": 4406,
+          "temperature_c": 32.3
+        },
+        {
+          "collected_at": "2026-09-07T00:00:00Z",
+          "full_charge_mah": 4402,
+          "temperature_c": 33.4
+        },
+        {
+          "collected_at": "2026-09-14T00:00:00Z",
+          "full_charge_mah": 4398,
+          "temperature_c": 34.5
+        },
+        {
+          "collected_at": "2026-09-21T00:00:00Z",
+          "full_charge_mah": 4394,
+          "temperature_c": 35.6
+        },
+        {
+          "collected_at": "2026-09-28T00:00:00Z",
+          "full_charge_mah": 4391,
+          "temperature_c": 31.2
+        },
+        {
+          "collected_at": "2026-10-05T00:00:00Z",
+          "full_charge_mah": 4387,
+          "temperature_c": 32.3
+        },
+        {
+          "collected_at": "2026-10-12T00:00:00Z",
+          "full_charge_mah": 4383,
+          "temperature_c": 33.4
+        }
+      ]
+    },
+    "os_history": [
+      {
+        "collected_at": "2026-04-06T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35
+      },
+      {
+        "collected_at": "2026-06-15T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36
+      }
+    ],
+    "status_history": [
+      {
+        "sequence": 1,
+        "collected_at": "2026-04-06T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 31.2,
+        "battery_cycle_count": 43,
+        "battery_charge_mah": 1097,
+        "battery_full_charge_mah": 4485,
+        "boot_count": 20,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.26
+      },
+      {
+        "sequence": 2,
+        "collected_at": "2026-04-13T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 32.3,
+        "battery_cycle_count": 48,
+        "battery_charge_mah": 1180,
+        "battery_full_charge_mah": 4481,
+        "boot_count": 21,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.3
+      },
+      {
+        "sequence": 3,
+        "collected_at": "2026-04-20T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 33.4,
+        "battery_cycle_count": 52,
+        "battery_charge_mah": 1263,
+        "battery_full_charge_mah": 4477,
+        "boot_count": 22,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.34
+      },
+      {
+        "sequence": 4,
+        "collected_at": "2026-04-27T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 34.5,
+        "battery_cycle_count": 57,
+        "battery_charge_mah": 1346,
+        "battery_full_charge_mah": 4474,
+        "boot_count": 23,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.38
+      },
+      {
+        "sequence": 5,
+        "collected_at": "2026-05-04T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 35.6,
+        "battery_cycle_count": 61,
+        "battery_charge_mah": 1429,
+        "battery_full_charge_mah": 4470,
+        "boot_count": 24,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.42
+      },
+      {
+        "sequence": 6,
+        "collected_at": "2026-05-11T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 31.2,
+        "battery_cycle_count": 66,
+        "battery_charge_mah": 1512,
+        "battery_full_charge_mah": 4466,
+        "boot_count": 25,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.26
+      },
+      {
+        "sequence": 7,
+        "collected_at": "2026-05-18T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 32.3,
+        "battery_cycle_count": 71,
+        "battery_charge_mah": 1595,
+        "battery_full_charge_mah": 4462,
+        "boot_count": 26,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.3
+      },
+      {
+        "sequence": 8,
+        "collected_at": "2026-05-25T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 33.4,
+        "battery_cycle_count": 75,
+        "battery_charge_mah": 1678,
+        "battery_full_charge_mah": 4459,
+        "boot_count": 27,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.34
+      },
+      {
+        "sequence": 9,
+        "collected_at": "2026-06-01T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 34.5,
+        "battery_cycle_count": 80,
+        "battery_charge_mah": 1761,
+        "battery_full_charge_mah": 4455,
+        "boot_count": 28,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.38
+      },
+      {
+        "sequence": 10,
+        "collected_at": "2026-06-08T00:00:00Z",
+        "os_version": "15",
+        "sdk_int": 35,
+        "battery_temp_c": 35.6,
+        "battery_cycle_count": 84,
+        "battery_charge_mah": 1844,
+        "battery_full_charge_mah": 4451,
+        "boot_count": 29,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.42
+      },
+      {
+        "sequence": 11,
+        "collected_at": "2026-06-15T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 31.2,
+        "battery_cycle_count": 89,
+        "battery_charge_mah": 1927,
+        "battery_full_charge_mah": 4447,
+        "boot_count": 30,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.26
+      },
+      {
+        "sequence": 12,
+        "collected_at": "2026-06-22T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 32.3,
+        "battery_cycle_count": 94,
+        "battery_charge_mah": 2010,
+        "battery_full_charge_mah": 4443,
+        "boot_count": 31,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.3
+      },
+      {
+        "sequence": 13,
+        "collected_at": "2026-06-29T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 33.4,
+        "battery_cycle_count": 98,
+        "battery_charge_mah": 2093,
+        "battery_full_charge_mah": 4440,
+        "boot_count": 32,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.34
+      },
+      {
+        "sequence": 14,
+        "collected_at": "2026-07-06T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 34.5,
+        "battery_cycle_count": 103,
+        "battery_charge_mah": 2176,
+        "battery_full_charge_mah": 4436,
+        "boot_count": 33,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.38
+      },
+      {
+        "sequence": 15,
+        "collected_at": "2026-07-13T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 35.6,
+        "battery_cycle_count": 107,
+        "battery_charge_mah": 2259,
+        "battery_full_charge_mah": 4432,
+        "boot_count": 34,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.42
+      },
+      {
+        "sequence": 16,
+        "collected_at": "2026-07-20T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 31.2,
+        "battery_cycle_count": 112,
+        "battery_charge_mah": 2342,
+        "battery_full_charge_mah": 4428,
+        "boot_count": 35,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.26
+      },
+      {
+        "sequence": 17,
+        "collected_at": "2026-07-27T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 32.3,
+        "battery_cycle_count": 116,
+        "battery_charge_mah": 2425,
+        "battery_full_charge_mah": 4425,
+        "boot_count": 36,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.3
+      },
+      {
+        "sequence": 18,
+        "collected_at": "2026-08-03T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 33.4,
+        "battery_cycle_count": 121,
+        "battery_charge_mah": 2508,
+        "battery_full_charge_mah": 4421,
+        "boot_count": 37,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.34
+      },
+      {
+        "sequence": 19,
+        "collected_at": "2026-08-10T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 34.5,
+        "battery_cycle_count": 126,
+        "battery_charge_mah": 2591,
+        "battery_full_charge_mah": 4417,
+        "boot_count": 38,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.38
+      },
+      {
+        "sequence": 20,
+        "collected_at": "2026-08-17T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 35.6,
+        "battery_cycle_count": 130,
+        "battery_charge_mah": 2674,
+        "battery_full_charge_mah": 4413,
+        "boot_count": 39,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.42
+      },
+      {
+        "sequence": 21,
+        "collected_at": "2026-08-24T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 31.2,
+        "battery_cycle_count": 135,
+        "battery_charge_mah": 2757,
+        "battery_full_charge_mah": 4409,
+        "boot_count": 40,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.26
+      },
+      {
+        "sequence": 22,
+        "collected_at": "2026-08-31T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 32.3,
+        "battery_cycle_count": 139,
+        "battery_charge_mah": 2840,
+        "battery_full_charge_mah": 4406,
+        "boot_count": 41,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.3
+      },
+      {
+        "sequence": 23,
+        "collected_at": "2026-09-07T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 33.4,
+        "battery_cycle_count": 144,
+        "battery_charge_mah": 2923,
+        "battery_full_charge_mah": 4402,
+        "boot_count": 42,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.34
+      },
+      {
+        "sequence": 24,
+        "collected_at": "2026-09-14T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 34.5,
+        "battery_cycle_count": 149,
+        "battery_charge_mah": 3006,
+        "battery_full_charge_mah": 4398,
+        "boot_count": 43,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.38
+      },
+      {
+        "sequence": 25,
+        "collected_at": "2026-09-21T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 35.6,
+        "battery_cycle_count": 153,
+        "battery_charge_mah": 3089,
+        "battery_full_charge_mah": 4394,
+        "boot_count": 44,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.42
+      },
+      {
+        "sequence": 26,
+        "collected_at": "2026-09-28T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 31.2,
+        "battery_cycle_count": 158,
+        "battery_charge_mah": 3172,
+        "battery_full_charge_mah": 4391,
+        "boot_count": 45,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.26
+      },
+      {
+        "sequence": 27,
+        "collected_at": "2026-10-05T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 32.3,
+        "battery_cycle_count": 162,
+        "battery_charge_mah": 3255,
+        "battery_full_charge_mah": 4387,
+        "boot_count": 46,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.3
+      },
+      {
+        "sequence": 28,
+        "collected_at": "2026-10-12T00:00:00Z",
+        "os_version": "16",
+        "sdk_int": 36,
+        "battery_temp_c": 33.4,
+        "battery_cycle_count": 167,
+        "battery_charge_mah": 3338,
+        "battery_full_charge_mah": 4383,
+        "boot_count": 47,
+        "had_abnormal_exit": false,
+        "thermal_headroom": 0.34
+      }
+    ],
+    "maintenance_records": []
+  },
+  "listing": {
+    "marketplace": "mercari",
+    "item_id": "m48123960572",
+    "imei_suffix": "4821",
+    "registered_at": "2026-10-20T00:00:00Z"
+  }
+}
