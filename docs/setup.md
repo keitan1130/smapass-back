@@ -70,7 +70,15 @@ docker compose run --rm --build migrate up
 docker compose run --rm migrate version
 ```
 
-コードとマイグレーションはイメージに含める。ソースの自動再読み込みは行わないため、編集後は `--build` が必要。マイグレーション失敗時の調査は [database.md](database.md) を参照。
+標準構成ではコードとマイグレーションをイメージに含めるため、編集後は `--build` が必要。Go の変更を自動反映する開発中は、次を使う。
+
+```bash
+make dev
+# make がない場合
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build --wait app
+```
+
+`app` だけを Air の開発イメージに切り替え、ソースを読み取り専用でマウントする。同じ Compose プロジェクトの DB を使い、データは維持する。Go の変更で再ビルド・再起動し、ビルド失敗時は古い API を停止する。`go.mod` / `go.sum` や SQL の変更はイメージ再ビルド・マイグレーションが必要なので `make dev` を再実行する。終了は通常どおり `docker compose down`。マイグレーション失敗時の調査は [database.md](database.md) を参照。
 
 ## ホストで Go を動かす
 
@@ -90,20 +98,14 @@ go run ./cmd
 ## テスト
 
 ```bash
-gofmt -w cmd internal pkg db/migrations
-go test ./...
-go vet ./...
-git diff --check
+make check
+make test-race
+make test-integration
 ```
 
-DB 統合テストは通常テストから分けている。マイグレーションとデモ投入済みの専用開発 DB に対して実行する。
+DB 統合テストは通常テストから分けている。Testcontainers がテストごとに PostgreSQL 18.6 を新規起動し、現行マイグレーションとテスト用データを投入する。接続ポートは自動で選び、終わったらコンテナを削除する。通常の Compose、`.env`、`TEST_DB_DSN` は使わず、事前の DB 準備も不要。
 
-```bash
-export TEST_DB_DSN='postgres://smapass:smapass_local@localhost:5433/smapass?sslmode=disable'
-go test -tags=integration ./internal/infrastructure/database/certificate
-```
-
-統合テストは読み取りのみで、DB の作成・初期化は行わない。デモの JSONB 変換、出品先、ページング、28件のハッシュと前ハッシュを確認する。実署名やチェーンの正しさは確認しない。
+証明書・出品先・ページング・28件のハッシュと前ハッシュ、正本とスナップショットの更新拒否を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
 
 ## よくある問題
 

@@ -1,6 +1,8 @@
 # API 契約
 
-現在実装されている公開参照 API。ベース URL は開発時 `http://localhost:8080`。各 GET 応答は JSON。機械可読定義は [openapi.yaml](openapi.yaml)、Go 型は [entity/certificate.go](../internal/domain/entity/certificate.go) と [schema/response.go](../internal/interface/schema/response.go)。
+現在実装されている公開参照 API。ベース URL は開発時 `http://localhost:8080`。各 GET 応答は JSON。機械可読定義は [openapi.json](openapi.json)、Go 型は [entity/certificate.go](../internal/domain/entity/certificate.go) と [schema/response.go](../internal/interface/schema/response.go)。
+
+OpenAPI は `make generate` で生成する。データ型は Go から生成し、URL・説明・制約は [openapi.base.json](openapi.base.json) で管理する。CI は生成物の更新漏れ、登録済み URL との一致、公開サンプルのスキーマ適合を検査する。生成結果を手で編集せず、元の定義を更新する。
 
 ## エンドポイント
 

@@ -2,6 +2,10 @@ package schema
 
 import "smapass-back/internal/domain/entity"
 
+type Health struct {
+	Status string `json:"status"`
+}
+
 type Error struct {
 	Error ErrorDetail `json:"error"`
 }

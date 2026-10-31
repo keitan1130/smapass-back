@@ -13,6 +13,9 @@
 | PostgreSQL | 18.6 | [公式リリース](https://www.postgresql.org/docs/release/18.6/) |
 | Alpine Linux | 3.24.3 | [公式リリース一覧](https://alpinelinux.org/releases/) |
 | OpenAPI | 3.2.1 | [公式仕様](https://spec.openapis.org/oas/v3.2.1.html) |
+| Air | 1.67.4 | [公式リリース](https://github.com/air-verse/air/releases/tag/v1.67.4) |
+| Testcontainers / postgres module | 0.44.0 | [公式リリース](https://github.com/testcontainers/testcontainers-go/releases/tag/v0.44.0) |
+| GoMock / mockgen | 0.6.0 | [公式リリース](https://github.com/uber-go/mock/releases/tag/v0.6.0) |
 
 Docker タグは `golang:1.27.3-alpine3.24`、`postgres:18.6-alpine3.24`、`alpine:3.24.3`。Go の直接・間接依存は互換範囲の最新版に更新して `go.mod` / `go.sum` に固定した。更新方法は [operations.md](operations.md)。
 
@@ -23,6 +26,7 @@ cmd/
   main.go                       API 起動・終了
   migrate/main.go               up / down-one / version
 internal/
+  apidoc/                       公開型からの API スキーマ生成・整合テスト
   di/                           コンストラクタの組み立て
   domain/
     entity/                     公開データ、証明書番号のルール
@@ -41,12 +45,17 @@ pkg/db/                         Bun 接続・接続プール
 db/migrations/                  埋め込み SQL と up / down
 db/seeds/                       手動投入する開発データ
 docker/                         マルチステージ Dockerfile
+tools/openapi/                  OpenAPI 生成・更新漏れ確認コマンド
+scripts/                        モック生成物の整合チェック
+.github/workflows/              GitHub Actions CI
 docs/                           API・設計・開発・運用
 ```
 
 HTTP の流れは `router → controller → usecase → domain の repository interface → infrastructure の repository → PostgreSQL`。`internal/di` が接続する。domain / usecase は HTTP と DB ライブラリに依存しない。
 
-Echo 5 を使用する。DI はコンストラクタの明示呼び出しとし、Wire の生成ステップは導入していない。S3 と LocalStack は使用しない。
+Echo 5 を使用する。DI はコンストラクタの明示呼び出しとする。Wire は公式にアーカイブされているため新規導入しない（[公式の状態](https://github.com/google/wire)）。repository のモックは GoMock / mockgen で生成する。S3 と LocalStack は使用しない。
+
+開発時は `compose.dev.yaml` で `app` を Air に切り替える。CI は通常の品質チェック・race 検出・自動 DB 統合・Compose の API 起動を分ける。テスト DB は開発 DB から分離し、Testcontainers が自動で作成・初期化・削除する。[開発・CI ガイド](development.md) を参照。
 
 ## データの扱い
 

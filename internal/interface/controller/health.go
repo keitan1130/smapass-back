@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"smapass-back/internal/interface/schema"
 	"smapass-back/internal/usecase"
 )
 
@@ -16,7 +17,7 @@ func NewHealthController(u *usecase.HealthUsecase) *HealthController {
 }
 
 func (c *HealthController) Live(ctx *echo.Context) error {
-	return ctx.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	return ctx.JSON(http.StatusOK, schema.Health{Status: "ok"})
 }
 
 func (c *HealthController) Ready(ctx *echo.Context) error {
@@ -25,5 +26,5 @@ func (c *HealthController) Ready(ctx *echo.Context) error {
 	if err := c.usecase.Ready(requestCtx); err != nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "database unavailable")
 	}
-	return ctx.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	return ctx.JSON(http.StatusOK, schema.Health{Status: "ok"})
 }

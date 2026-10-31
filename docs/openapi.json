@@ -1,0 +1,1217 @@
+{
+  "components": {
+    "schemas": {
+      "Battery": {
+        "properties": {
+          "change_percent": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cycle_count": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "initial_full_charge_mah": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_full_charge_mah": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trend": {
+            "items": {
+              "$ref": "#/components/schemas/BatteryPoint"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "latest_full_charge_mah",
+          "initial_full_charge_mah",
+          "change_percent",
+          "cycle_count",
+          "trend"
+        ],
+        "type": "object"
+      },
+      "BatteryPoint": {
+        "properties": {
+          "collected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "full_charge_mah": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temperature_c": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "collected_at",
+          "full_charge_mah",
+          "temperature_c"
+        ],
+        "type": "object"
+      },
+      "Certificate": {
+        "properties": {
+          "is_demo": {
+            "type": "boolean"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "listing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Listing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "examples": [
+              "01ABCDEFGH"
+            ],
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{10}$",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/Snapshot"
+          },
+          "status": {
+            "enum": [
+              "valid",
+              "revoked",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "successor_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "number",
+          "status",
+          "successor_number",
+          "issued_at",
+          "is_demo",
+          "snapshot",
+          "listing"
+        ],
+        "type": "object"
+      },
+      "Certificates": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Certificate"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "DeviceSpec": {
+        "properties": {
+          "collected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cpu_cores": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ram_bytes": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "screen_density_dpi": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "screen_size_inch": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sdk_int": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "soc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "storage_bytes": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "manufacturer",
+          "model",
+          "device_name",
+          "soc",
+          "cpu_cores",
+          "ram_bytes",
+          "storage_bytes",
+          "screen_size_inch",
+          "screen_density_dpi",
+          "os_version",
+          "sdk_int",
+          "collected_at"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "Grade": {
+        "properties": {
+          "algorithm_version": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GradeItem"
+            },
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "explanation",
+          "algorithm_version",
+          "items"
+        ],
+        "type": "object"
+      },
+      "GradeItem": {
+        "properties": {
+          "explanation": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "explanation"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "Listing": {
+        "properties": {
+          "imei_suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "pattern": "^[0-9]{4}$"
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "marketplace": {
+            "type": "string"
+          },
+          "registered_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketplace",
+          "item_id",
+          "imei_suffix",
+          "registered_at"
+        ],
+        "type": "object"
+      },
+      "MaintenanceRecord": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_name",
+          "provider_type",
+          "recorded_at",
+          "description"
+        ],
+        "type": "object"
+      },
+      "OSVersion": {
+        "properties": {
+          "collected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "os_version": {
+            "type": "string"
+          },
+          "sdk_int": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collected_at",
+          "os_version",
+          "sdk_int"
+        ],
+        "type": "object"
+      },
+      "ProofStep": {
+        "properties": {
+          "hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "side": {
+            "enum": [
+              "left",
+              "right"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "side",
+          "hash"
+        ],
+        "type": "object"
+      },
+      "Recording": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "gap_threshold_seconds": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/RecordingGap"
+            },
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "started_at",
+          "ended_at",
+          "count",
+          "gap_threshold_seconds",
+          "gaps"
+        ],
+        "type": "object"
+      },
+      "RecordingGap": {
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "Records": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationRecord"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "offset": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "type": "object"
+      },
+      "Snapshot": {
+        "properties": {
+          "battery": {
+            "$ref": "#/components/schemas/Battery"
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceSpec"
+          },
+          "grade": {
+            "$ref": "#/components/schemas/Grade"
+          },
+          "maintenance_records": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceRecord"
+            },
+            "type": "array"
+          },
+          "os_history": {
+            "items": {
+              "$ref": "#/components/schemas/OSVersion"
+            },
+            "type": "array"
+          },
+          "recording": {
+            "$ref": "#/components/schemas/Recording"
+          },
+          "schema_version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status_history": {
+            "items": {
+              "$ref": "#/components/schemas/StatusRecord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "device",
+          "grade",
+          "recording",
+          "battery",
+          "os_history",
+          "status_history",
+          "maintenance_records"
+        ],
+        "type": "object"
+      },
+      "StatusRecord": {
+        "properties": {
+          "battery_charge_mah": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "battery_cycle_count": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "battery_full_charge_mah": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "battery_temp_c": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "boot_count": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "had_abnormal_exit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "os_version": {
+            "type": "string"
+          },
+          "sdk_int": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "thermal_headroom": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sequence",
+          "collected_at",
+          "os_version",
+          "sdk_int",
+          "battery_temp_c",
+          "battery_cycle_count",
+          "battery_charge_mah",
+          "battery_full_charge_mah",
+          "boot_count",
+          "had_abnormal_exit",
+          "thermal_headroom"
+        ],
+        "type": "object"
+      },
+      "VerificationRecord": {
+        "properties": {
+          "anchor_state": {
+            "enum": [
+              "unanchored",
+              "pending",
+              "confirmed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "canonical_payload": {
+            "type": "string"
+          },
+          "canonicalization": {
+            "type": "string"
+          },
+          "chain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "leaf_index": {
+            "anyOf": [
+              {
+                "format": "int32",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merkle_proof": {
+            "items": {
+              "$ref": "#/components/schemas/ProofStep"
+            },
+            "type": "array"
+          },
+          "merkle_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "previous_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "signature_algorithm": {
+            "type": "string"
+          },
+          "signature_base64": {
+            "type": "string"
+          },
+          "transaction_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "enum": [
+              "spec",
+              "status",
+              "inspection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "type",
+          "collected_at",
+          "canonical_payload",
+          "payload_hash",
+          "previous_hash",
+          "signature_base64",
+          "public_key",
+          "signature_algorithm",
+          "canonicalization",
+          "anchor_state",
+          "chain",
+          "transaction_hash",
+          "merkle_root",
+          "leaf_index",
+          "merkle_proof"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Read-only scaffold. Ingestion, authentication, certificate issuance, grading, JCS and chain verification are not implemented. Demo evidence has invalid signatures and no anchor.",
+    "title": "smapass-back API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.2.1",
+  "paths": {
+    "/api/certificates": {
+      "get": {
+        "operationId": "listCertificates",
+        "parameters": [
+          {
+            "description": "1 to 50 comma-separated numbers. Duplicates are removed; unknown numbers are omitted; results are sorted by number.",
+            "example": "01ABC-DEFGH",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Certificates"
+                }
+              }
+            },
+            "description": "Public certificates"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "summary": "Read certificates by known public numbers"
+      }
+    },
+    "/api/certificates/{number}": {
+      "get": {
+        "operationId": "getCertificate",
+        "parameters": [
+          {
+            "description": "Crockford Base32 10 characters; case, spaces, hyphens and O/I/L aliases are normalized.",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Certificate"
+                }
+              }
+            },
+            "description": "Public certificate"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "summary": "Read an issued public snapshot and current listing"
+      }
+    },
+    "/api/certificates/{number}/records": {
+      "get": {
+        "operationId": "getCertificateRecords",
+        "parameters": [
+          {
+            "description": "Crockford Base32 10 characters; case, spaces, hyphens and O/I/L aliases are normalized.",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Records"
+                }
+              }
+            },
+            "description": "Evidence page; these records do not imply verification success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "summary": "Read frozen certificate evidence, ordered by sequence"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Alive"
+          }
+        },
+        "summary": "Process liveness"
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Ready"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "summary": "Database readiness"
+      }
+    }
+  },
+  "security": [],
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ]
+}

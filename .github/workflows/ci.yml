@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Go / generated API and mocks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+      - run: make fmt-check generate-check vet build
+      - run: make test-race
+      - run: go mod verify && git diff --check
+
+  integration:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+      - run: make test-integration
+
+  compose:
+    name: Compose startup and API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - run: cp .env.example .env
+      - name: Validate Compose configurations
+        run: |
+          docker compose config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+      - run: docker compose up -d --build --wait app
+      - run: make seed
+      - name: Check API and migrations
+        run: |
+          make smoke
+          docker compose run --rm migrate up
+          docker compose run --rm migrate version
+      - name: Container logs
+        if: always()
+        run: docker compose logs --no-color --tail=100 app migrate db
+      - name: Clean up CI resources
+        if: always()
+        run: docker compose down --volumes --remove-orphans

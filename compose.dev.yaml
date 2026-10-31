@@ -1,0 +1,9 @@
+services:
+  app:
+    image: smapass-back:dev
+    build:
+      context: .
+      dockerfile: docker/air.dockerfile
+    command: ["air", "-c", ".air.toml"]
+    volumes:
+      - .:/app:ro

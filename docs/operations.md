@@ -30,6 +30,8 @@ Go / Echo / Bun / migrate / Alpine / PostgreSQL の新しい安定リリース�
 
 `up -d` だけではソース変更を新しい Go バイナリにしない。イメージ更新と Git のコード更新は別。`build --pull` は Dockerfile のベースを更新し、`compose pull db` は PostgreSQL を取得する。いずれも DB メジャーバージョンの移行は行わない。
 
+Air を使う `make dev` では Go ソースの変更を自動反映する。通常のバイナリ構成に戻す場合は `make up`。開発ツールの更新時も固定バージョンを変更し、`make check`・`make test-integration` と該当する Compose 構成を確認する。
+
 ## バックアップ
 
 API が動いていても pg_dump は整合したバックアップを作る。出力先には十分な空き容量を用意する。

@@ -1,0 +1,19 @@
+root = "."
+tmp_dir = "/tmp/smapass-air"
+
+[build]
+  cmd = "go build -o /tmp/smapass-air/server ./cmd"
+  entrypoint = ["/tmp/smapass-air/server"]
+  delay = 500
+  include_ext = ["go"]
+  exclude_dir = [".git", "bin", "tmp", "docs", "tools"]
+  exclude_regex = ["_test.go", "_mock.go"]
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = "10s"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

@@ -6,26 +6,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"smapass-back/pkg/db"
+	"smapass-back/internal/infrastructure/database/testutil"
 )
 
-// Uses an isolated development DB with migrations and development seed already applied.
+// The DB is created, migrated, seeded and removed automatically for this test.
 func TestDevelopmentCertificate(t *testing.T) {
-	dsn := os.Getenv("TEST_DB_DSN")
-	if dsn == "" {
-		t.Fatal("TEST_DB_DSN is required with -tags=integration")
-	}
+	database := testutil.NewDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	database, err := db.Open(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
 	repo := NewRepository(database)
 	cert, err := repo.FindByNumber(ctx, "01ABCDEFGH")
 	if err != nil {
@@ -57,5 +49,20 @@ func TestDevelopmentCertificate(t *testing.T) {
 	page, total, err := repo.Records(ctx, "01ABCDEFGH", 2, 27)
 	if err != nil || total != 28 || len(page) != 1 || page[0].Sequence != 28 {
 		t.Fatalf("pagination failed: %+v %d %v", page, total, err)
+	}
+}
+
+func TestEvidenceAndSnapshotAreImmutable(t *testing.T) {
+	database := testutil.NewDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, test := range []struct{ query, message string }{
+		{"UPDATE device_logs SET collected_at = collected_at + interval '1 day' WHERE seq = 1", "signed evidence is append-only"},
+		{"DELETE FROM device_logs WHERE seq = 1", "signed evidence is append-only"},
+		{"UPDATE certificates SET snapshot = '{}'::jsonb WHERE number = '01ABCDEFGH'", "issue a new certificate to change snapshot"},
+	} {
+		if _, err := database.ExecContext(ctx, test.query); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Fatalf("mutation was not rejected as expected: %v", err)
+		}
 	}
 }
