@@ -46,7 +46,7 @@ docs/                           API・設計・開発・運用
 
 HTTP の流れは `router → controller → usecase → domain の repository interface → infrastructure の repository → PostgreSQL`。`internal/di` が接続する。domain / usecase は HTTP と DB ライブラリに依存しない。
 
-Toybox の `cmd`、`internal/{di,domain,usecase,interface,infrastructure}`、`pkg/db`、`db/migrations`、`docker` と対応する。新規プロジェクトでは Echo 5 を使用する。DI はコンストラクタの明示呼び出しとし、Wire の生成ステップは導入していない。S3 と LocalStack、Toybox の OAuth / work / webhook 等は含めない。
+Echo 5 を使用する。DI はコンストラクタの明示呼び出しとし、Wire の生成ステップは導入していない。S3 と LocalStack は使用しない。
 
 ## データの扱い
 

@@ -3,8 +3,8 @@
 ## 担当範囲
 
 - このリポジトリの Go API、PostgreSQL、Docker Compose、マイグレーション、関連文書を担当する。
-- `../smapass-web/docs/` は要求・画面の参照資料として読む。Web / mobile / admin や Toybox を依頼なく変更しない。
-- Toybox の参照先は `/home/keitan/workspace/toybox/backend`。S3、LocalStack、OAuth や Toybox 固有の機能はコピーしない。
+- `../smapass-web/docs/` は要求・画面の参照資料として読む。Web / mobile / adminを依頼なく変更しない。
+- S3、LocalStack は使用しない。
 - 依頼外の変更を加えず、既存のユーザー変更を保持する。レビュー依頼では報告を先にし、修正の指示がなければ編集しない。
 
 ## 実装の原則

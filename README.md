@@ -43,7 +43,7 @@ curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2'
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | エージェントの作業範囲・実装規則・検証 |
 | [環境構築](docs/setup.md) | 初回起動、設定、Go 単体開発、トラブル対応 |
-| [アーキテクチャ](docs/architecture.md) | Toybox との対応、責務、実装済みと今後の順序 |
+| [アーキテクチャ](docs/architecture.md) | ディレクトリ構成、責務、実装済みと今後の順序 |
 | [データベース](docs/database.md) | テーブル、仮 SQL からの変更、マイグレーション |
 | [API](docs/api.md) / [OpenAPI](docs/openapi.yaml) | 現在使える API、レスポンスとエラー |
 | [画面との対応](docs/screen-data.md) | 添付画面に必要な情報と各担当 |
