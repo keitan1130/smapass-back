@@ -24,6 +24,14 @@ func (c *CertificateController) Get(ctx *echo.Context) error {
 	return ctx.JSON(http.StatusOK, result)
 }
 
+func (c *CertificateController) CurrentByIMEI(ctx *echo.Context) error {
+	result, err := c.usecase.CurrentByIMEI(ctx.Request().Context(), ctx.Param("imei"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, result)
+}
+
 func (c *CertificateController) List(ctx *echo.Context) error {
 	result, err := c.usecase.List(ctx.Request().Context(), strings.Split(ctx.QueryParam("ids"), ","))
 	if err != nil {

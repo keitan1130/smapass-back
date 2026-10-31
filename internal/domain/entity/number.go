@@ -2,11 +2,23 @@ package entity
 
 import (
 	"errors"
+	"github.com/google/uuid"
 	"strings"
 	"unicode"
 )
 
 var ErrInvalidNumber = errors.New("invalid certificate number")
+
+func NormalizeCertificateReference(input string) (string, error) {
+	value := strings.TrimSpace(input)
+	if len(value) == 36 {
+		id, err := uuid.Parse(value)
+		if err == nil {
+			return id.String(), nil
+		}
+	}
+	return NormalizeNumber(input)
+}
 
 // NormalizeNumber accepts Crockford Base32 input and returns ten storage characters.
 func NormalizeNumber(input string) (string, error) {

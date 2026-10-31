@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/google/uuid"
 
 	"github.com/uptrace/bun"
 	"smapass-back/internal/domain/entity"
@@ -20,7 +21,7 @@ func NewRepository(db *bun.DB) *Repository { return &Repository{db: db} }
 
 func (r *Repository) selectCertificates(model any) *bun.SelectQuery {
 	return r.db.NewSelect().Model(model).
-		Column("c.number", "c.status", "c.successor_number", "c.issued_at", "c.is_demo", "c.snapshot").
+		Column("c.id", "c.imei", "c.number", "c.status", "c.successor_number", "c.issued_at", "c.is_demo", "c.snapshot").
 		ColumnExpr(`CASE WHEN l.certificate_id IS NULL THEN NULL ELSE jsonb_build_object(
 			'marketplace', l.marketplace, 'item_id', l.item_id,
 			'imei_suffix', l.imei_suffix, 'registered_at', l.registered_at) END AS listing`).
@@ -29,7 +30,7 @@ func (r *Repository) selectCertificates(model any) *bun.SelectQuery {
 
 func (r *Repository) FindByNumber(ctx context.Context, number string) (*entity.Certificate, error) {
 	var row dto.Certificate
-	err := r.selectCertificates(&row).Where("c.number = ?", number).Scan(ctx)
+	err := r.selectCertificates(&row).Where(referenceColumn(number)+" = ?", number).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	}
@@ -41,8 +42,16 @@ func (r *Repository) FindByNumber(ctx context.Context, number string) (*entity.C
 }
 
 func (r *Repository) FindByNumbers(ctx context.Context, numbers []string) ([]entity.Certificate, error) {
+	ids, short := []string{}, []string{}
+	for _, value := range numbers {
+		if referenceColumn(value) == "c.id" {
+			ids = append(ids, value)
+		} else {
+			short = append(short, value)
+		}
+	}
 	rows := make([]dto.Certificate, 0)
-	if err := r.selectCertificates(&rows).Where("c.number IN (?)", bun.In(numbers)).OrderExpr("c.number ASC").Scan(ctx); err != nil {
+	if err := r.selectCertificates(&rows).Where("(c.number IN (?) OR c.id IN (?))", bun.In(short), bun.In(ids)).OrderExpr("c.number ASC").Scan(ctx); err != nil {
 		return nil, err
 	}
 	result := make([]entity.Certificate, 0, len(rows))
@@ -55,7 +64,7 @@ func (r *Repository) FindByNumbers(ctx context.Context, numbers []string) ([]ent
 func (r *Repository) Records(ctx context.Context, number string, limit, offset int) ([]entity.VerificationRecord, int, error) {
 	var total int
 	err := r.db.NewRaw(`SELECT count(*) FROM certificate_logs cl
-		JOIN certificates c ON c.id = cl.certificate_id WHERE c.number = ?`, number).Scan(ctx, &total)
+		JOIN certificates c ON c.id = cl.certificate_id WHERE `+referenceColumn(number)+` = ?`, number).Scan(ctx, &total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -70,7 +79,7 @@ func (r *Repository) Records(ctx context.Context, number string, limit, offset i
 		JOIN device_keys k ON k.id = l.key_id
 		LEFT JOIN log_anchors la ON la.log_id = l.id
 		LEFT JOIN anchors a ON a.id = la.anchor_id
-		WHERE c.number = ? ORDER BY l.seq ASC LIMIT ? OFFSET ?`, number, limit, offset)
+		WHERE `+referenceColumn(number)+` = ? ORDER BY l.seq ASC LIMIT ? OFFSET ?`, number, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -92,4 +101,30 @@ func (r *Repository) Records(ctx context.Context, number string, limit, offset i
 		result = append(result, record)
 	}
 	return result, total, rows.Err()
+}
+
+func referenceColumn(value string) string {
+	if len(value) == 36 {
+		if _, err := uuid.Parse(value); err == nil {
+			return "c.id"
+		}
+	}
+	return "c.number"
+}
+
+func (r *Repository) FindCurrentByIMEI(ctx context.Context, imei string) (*entity.Certificate, error) {
+	var row dto.Certificate
+	err := r.selectCertificates(&row).
+		Join("JOIN device_imei_aliases AS a ON a.primary_imei = c.imei").
+		Join("JOIN device_ownerships AS o ON o.id = c.ownership_id AND o.ended_at IS NULL").
+		Where("a.imei = ? AND c.status = 'valid'", imei).
+		OrderExpr("c.issued_at DESC, c.id DESC").Limit(1).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, repository.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	result := row.Entity()
+	return &result, nil
 }

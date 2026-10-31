@@ -3,7 +3,9 @@ module smapass-back
 go 1.27.3
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
+	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v5 v5.4.4
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/testcontainers/testcontainers-go v0.44.0
@@ -33,7 +35,6 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/lib/pq v1.12.3 // indirect
