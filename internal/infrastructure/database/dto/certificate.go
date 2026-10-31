@@ -9,6 +9,8 @@ import (
 
 type Certificate struct {
 	bun.BaseModel   `bun:"table:certificates,alias:c"`
+	ID              string          `bun:"id"`
+	IMEI            string          `bun:"imei"`
 	Number          string          `bun:"number"`
 	Status          string          `bun:"status"`
 	SuccessorNumber *string         `bun:"successor_number"`
@@ -19,6 +21,6 @@ type Certificate struct {
 }
 
 func (c Certificate) Entity() entity.Certificate {
-	return entity.Certificate{Number: c.Number, Status: c.Status, SuccessorNumber: c.SuccessorNumber,
+	return entity.Certificate{ID: c.ID, IMEI: c.IMEI, Number: c.Number, Status: c.Status, SuccessorNumber: c.SuccessorNumber,
 		IssuedAt: c.IssuedAt, IsDemo: c.IsDemo, Snapshot: c.Snapshot, Listing: c.Listing}
 }

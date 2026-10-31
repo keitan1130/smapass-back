@@ -1,6 +1,6 @@
 # smapass-back
 
-中古 Android 端末の状態履歴と、出品時に公開する証明書を扱う Go API の雛形です。Go と PostgreSQL を Docker Compose で動かします。保存先は PostgreSQL のみで、S3 / LocalStack は使いません。
+中古 Android 端末を IMEI で管理し、状態履歴と出品時の証明書を扱う Go API です。Go と PostgreSQL を Docker Compose で動かします。保存先は PostgreSQL のみで、S3 / LocalStack は使いません。
 
 Echo → controller → usecase → repository → Bun / PostgreSQL の構成です。
 
@@ -24,6 +24,7 @@ curl -f http://localhost:8080/ready
 make seed
 curl -f http://localhost:8080/api/certificates/01ABC-DEFGH
 curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2'
+curl -f http://localhost:8080/certificates/000000000094821
 ```
 
 `make` がない環境では [環境構築](docs/setup.md) のコマンドを使ってください。デモは架空の Pixel 8 と28件の記録です。`is_demo: true` で、署名は無効、チェーン記録はありません。画面の「改ざんなし」の根拠には使えません。
@@ -80,9 +81,13 @@ GitHub Actions は push / PR 時に品質チェック、race 検出・カバレ�
 - Go API・PostgreSQL・マイグレーションの Compose 起動、終了処理、DB 接続確認
 - 証明書詳細・番号指定の一括参照・検証用記録の参照 API
 - 端末情報、評価の表示値と説明、記録期間、バッテリー推移、OS 更新履歴、記録一覧、出品先・IMEI 末尾、整備履歴の公開データ型
-- 仮 SQL を基にした初期マイグレーション、発行時スナップショット、デモデータ、参照 API のレート制限と CORS
+- IMEI 主キーと複数 IMEI の照合、登録者履歴、15日間の非活動を条件とした再登録、鍵の交代
+- 登録・所有端末の検索 API と RS256 JWT 検証（トークン発行は別）
+- 現在の登録者による手動失効（鍵・有効な証明書も失効、15日待たずに次の登録が可能）
+- `/certificates/{imei}` による現在の登録者の有効な証明書取得、証明書 UUID での過去データ参照
+- DB マイグレーション、発行時スナップショット、デモデータ、レート制限と CORS
 
-認証・認可、端末登録、ログの取り込みと署名検証、評価算出、証明書の発行・失効・再発行、出品先の更新、事業者の整備記録登録、JCS 正規化、チェーン送信・検証は未実装です。書き込み API は公開していません。カード画像・QR・OGP の生成とブックマークは Web の担当です。
+認証トークンの発行・更新・失効、attestation、ログの取り込みと署名検証、評価算出、証明書の発行・単体の失効・再発行、出品先の更新、事業者の整備記録登録、JCS 正規化、チェーン送信・検証は未実装です。登録 API は認証の検証設定がない場合503で拒否します。カード画像・QR・OGP の生成とブックマークは Web の担当です。
 
 ## ドキュメント
 
@@ -92,6 +97,7 @@ GitHub Actions は push / PR 時に品質チェック、race 検出・カバレ�
 | [環境構築](docs/setup.md) | 初回起動、設定、Go 単体開発、トラブル対応 |
 | [開発・CI ガイド](docs/development.md) | Air、テスト自動 DB、生成コマンド、GitHub CI |
 | [アーキテクチャ](docs/architecture.md) | ディレクトリ構成、責務、実装済みと今後の順序 |
+| [IMEI・登録者管理](docs/device-registration.md) | IMEI 登録、15日ルール、公開 URL、認証連携 |
 | [データベース](docs/database.md) | テーブル、仮 SQL からの変更、マイグレーション |
 | [API](docs/api.md) / [OpenAPI](docs/openapi.json) | 現在使える API、レスポンスとエラー |
 | [画面との対応](docs/screen-data.md) | 添付画面に必要な情報と各担当 |

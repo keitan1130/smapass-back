@@ -101,6 +101,14 @@
       },
       "Certificate": {
         "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
+          },
           "is_demo": {
             "type": "boolean"
           },
@@ -148,6 +156,8 @@
           }
         },
         "required": [
+          "id",
+          "imei",
           "number",
           "status",
           "successor_number",
@@ -169,6 +179,57 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "Device": {
+        "properties": {
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
+          },
+          "imeis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "key_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_verified_log_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownership_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reclaimable_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "registered_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imei",
+          "imeis",
+          "ownership_id",
+          "registered_at",
+          "last_verified_log_at",
+          "reclaimable_at",
+          "key_id"
         ],
         "type": "object"
       },
@@ -582,6 +643,28 @@
         ],
         "type": "object"
       },
+      "RegisterDevice": {
+        "properties": {
+          "imeis": {
+            "items": {
+              "pattern": "^[0-9]{15}$",
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          },
+          "public_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "imeis",
+          "public_key"
+        ],
+        "type": "object"
+      },
       "Snapshot": {
         "properties": {
           "battery": {
@@ -864,10 +947,17 @@
         ],
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "RS256 JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
-    "description": "Read-only scaffold. Ingestion, authentication, certificate issuance, grading, JCS and chain verification are not implemented. Demo evidence has invalid signatures and no anchor.",
+    "description": "IMEI-managed device registration and certificate reads. JWT token issuance, signed log ingestion, grading, certificate issuance and chain anchoring are not implemented.",
     "title": "smapass-back API",
     "version": "0.1.0"
   },
@@ -878,7 +968,7 @@
         "operationId": "listCertificates",
         "parameters": [
           {
-            "description": "1 to 50 comma-separated numbers. Duplicates are removed; unknown numbers are omitted; results are sorted by number.",
+            "description": "Certificate UUID or legacy 10-character certificate number; comma-separated for ids (up to 50).",
             "example": "01ABC-DEFGH",
             "in": "query",
             "name": "ids",
@@ -968,7 +1058,7 @@
         "operationId": "getCertificate",
         "parameters": [
           {
-            "description": "Crockford Base32 10 characters; case, spaces, hyphens and O/I/L aliases are normalized.",
+            "description": "Certificate UUID or legacy 10-character certificate number; comma-separated for ids (up to 50).",
             "in": "path",
             "name": "number",
             "required": true,
@@ -1057,7 +1147,7 @@
         "operationId": "getCertificateRecords",
         "parameters": [
           {
-            "description": "Crockford Base32 10 characters; case, spaces, hyphens and O/I/L aliases are normalized.",
+            "description": "Certificate UUID or legacy 10-character certificate number; comma-separated for ids (up to 50).",
             "in": "path",
             "name": "number",
             "required": true,
@@ -1159,6 +1249,348 @@
           }
         },
         "summary": "Read frozen certificate evidence, ordered by sequence"
+      }
+    },
+    "/api/devices": {
+      "post": {
+        "operationId": "registerDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Owned device"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Device in use or identifier conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Authentication not configured or unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Register or reclaim after 15 days"
+      }
+    },
+    "/api/devices/lookup": {
+      "post": {
+        "operationId": "lookupOwnedDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "imei": {
+                    "pattern": "^[0-9]{15}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "imei"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Owned device"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Device in use or identifier conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Authentication not configured or unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Look up an owned device by IMEI"
+      }
+    },
+    "/api/devices/{imei}/revoke": {
+      "post": {
+        "operationId": "revokeOwnedDevice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "imei",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{15}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Registration ended; active keys and valid certificates revoked; immediately available for registration"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Authentication not configured or unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Revoke own current registration and release the device immediately"
+      }
+    },
+    "/certificates/{imei}": {
+      "get": {
+        "operationId": "getCurrentCertificateByIMEI",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "imei",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{15}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Certificate"
+                }
+              }
+            },
+            "description": "Current certificate"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable"
+          }
+        },
+        "summary": "Public current valid certificate for an IMEI or secondary IMEI"
       }
     },
     "/health": {

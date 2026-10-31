@@ -15,6 +15,10 @@ import (
 
 type missingRepository struct{}
 
+func (missingRepository) FindCurrentByIMEI(context.Context, string) (*entity.Certificate, error) {
+	return nil, repository.ErrNotFound
+}
+
 func (missingRepository) FindByNumber(context.Context, string) (*entity.Certificate, error) {
 	return nil, repository.ErrNotFound
 }

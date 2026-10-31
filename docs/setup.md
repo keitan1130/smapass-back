@@ -28,11 +28,14 @@ curl -f http://localhost:8080/ready
 ```bash
 docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/seeds/development.sql
 curl -f http://localhost:8080/api/certificates/01ABC-DEFGH
+curl -f http://localhost:8080/certificates/000000000094821
 curl -f 'http://localhost:8080/api/certificates?ids=01ABCDEFGH'
 curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2&offset=0'
 ```
 
-デモ投入は繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
+デモ投入は登録者を変更する前なら繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
+
+既存の UUID 管理の DB を更新する場合、デモ以外の端末には確認済みの IMEI 全桁との対応表が必要。[IMEI 移行手順](device-registration.md#既存データの移行)を先に確認する。既存 DB を削除して作り直さない。
 
 ## 設定
 
@@ -45,6 +48,9 @@ curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2&offse
 | `API_PORT` | `8080` | ホストから API に接続するポート |
 | `DB_PORT` | `5433` | ホストから DB に接続するポート |
 | `CORS_ORIGINS` | `http://localhost:3000` | ブラウザの許可 Origin。カンマ区切り。末尾 `/` やパスを付けない |
+| `AUTH_PUBLIC_KEY` | 未設定 | 認証トークンを検証する RSA 公開鍵 PEM。2048 bit 以上 |
+| `AUTH_ISSUER` | 未設定 | 許可するトークンの issuer |
+| `AUTH_AUDIENCE` | 未設定 | 許可するトークンの audience |
 | `HTTP_ADDR` | `:8080` | Go 単体起動時の待受先。Compose 内は `:8080` 固定 |
 
 API / DB のホストへの公開は `127.0.0.1` のみ。Compose 内の通信は `app` → `db:5432`。`DB_PORT` の変更はコンテナ間の DSN に影響しない。ユーザー・パスワード・DB 名を変更したら `DB_DSN` も合わせる。パスワードに記号を使う場合は DSN 内では URL エンコードする。
@@ -52,6 +58,8 @@ API / DB のホストへの公開は `127.0.0.1` のみ。Compose 内の通信�
 `POSTGRES_*` は初回の DB ボリューム作成時に使われる。既存ボリュームがある状態で `.env` を変えても DB 内のユーザーやパスワードは変わらない。
 
 `.env` は Compose が読み込む。Go バイナリは `.env` を自動で読まない。
+
+`AUTH_*` は3項目を揃える。すべて未設定でも公開証明書の参照は動くが、端末の登録・所有端末検索は503を返す。部分設定は起動エラーにする。JWT は RS256 で検証し、トークン発行は今後の認証機能で実装する。Android も `Authorization: Bearer <access token>` を付けて接続する。詳細は [認証との接続](device-registration.md#認証との接続)。
 
 ## 日常の操作
 
@@ -105,7 +113,7 @@ make test-integration
 
 DB 統合テストは通常テストから分けている。Testcontainers がテストごとに PostgreSQL 18.6 を新規起動し、現行マイグレーションとテスト用データを投入する。接続ポートは自動で選び、終わったらコンテナを削除する。通常の Compose、`.env`、`TEST_DB_DSN` は使わず、事前の DB 準備も不要。
 
-証明書・出品先・ページング・28件のハッシュと前ハッシュ、正本とスナップショットの更新拒否を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
+証明書・出品先・ページング・28件のハッシュと前ハッシュ、正本とスナップショットの更新拒否、IMEI の登録・検索・15日ルール・手動失効・同時登録、JWT 付き HTTP 入出力、旧 UUID からの移行を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
 
 ## よくある問題
 

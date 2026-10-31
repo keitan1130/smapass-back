@@ -66,6 +66,21 @@ func (mr *MockCertificateRepositoryMockRecorder) FindByNumbers(arg0, arg1 any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindByNumbers", reflect.TypeOf((*MockCertificateRepository)(nil).FindByNumbers), arg0, arg1)
 }
 
+// FindCurrentByIMEI mocks base method.
+func (m *MockCertificateRepository) FindCurrentByIMEI(arg0 context.Context, arg1 string) (*entity.Certificate, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindCurrentByIMEI", arg0, arg1)
+	ret0, _ := ret[0].(*entity.Certificate)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindCurrentByIMEI indicates an expected call of FindCurrentByIMEI.
+func (mr *MockCertificateRepositoryMockRecorder) FindCurrentByIMEI(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindCurrentByIMEI", reflect.TypeOf((*MockCertificateRepository)(nil).FindCurrentByIMEI), arg0, arg1)
+}
+
 // Records mocks base method.
 func (m *MockCertificateRepository) Records(arg0 context.Context, arg1 string, arg2, arg3 int) ([]entity.VerificationRecord, int, error) {
 	m.ctrl.T.Helper()

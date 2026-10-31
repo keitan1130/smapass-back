@@ -20,6 +20,10 @@ def main():
     if not certificate["is_demo"] or certificate["snapshot"]["recording"]["count"] != 28:
         raise RuntimeError("Unexpected development certificate; run make seed")
 
+    current = get("/certificates/000000000094821")
+    if current["id"] != certificate["id"]:
+        raise RuntimeError("IMEI public route returned a different certificate")
+
     records = get("/api/certificates/01ABCDEFGH/records?limit=2")
     if records["total"] != 28 or len(records["items"]) != 2:
         raise RuntimeError("Unexpected evidence page")

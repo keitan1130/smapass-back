@@ -4,6 +4,8 @@ import "time"
 
 // Certificate contains only data approved for the public API.
 type Certificate struct {
+	ID              string    `json:"id"`
+	IMEI            string    `json:"imei"`
 	Number          string    `json:"number"`
 	Status          string    `json:"status"`
 	SuccessorNumber *string   `json:"successor_number"`
