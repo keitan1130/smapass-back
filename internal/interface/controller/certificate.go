@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v5"
+	"smapass-back/internal/domain/entity"
+	"smapass-back/internal/interface/auth"
 	"smapass-back/internal/interface/schema"
 	"smapass-back/internal/usecase"
 )
@@ -30,6 +32,17 @@ func (c *CertificateController) CurrentByIMEI(ctx *echo.Context) error {
 		return err
 	}
 	return ctx.JSON(http.StatusOK, result)
+}
+
+func (c *CertificateController) Revoke(ctx *echo.Context) error {
+	p, ok := auth.Principal(ctx.Request().Context())
+	if !ok {
+		return entity.ErrUnauthenticated
+	}
+	if err := c.usecase.Revoke(ctx.Request().Context(), p, ctx.Param("number")); err != nil {
+		return err
+	}
+	return ctx.NoContent(http.StatusNoContent)
 }
 
 func (c *CertificateController) List(ctx *echo.Context) error {

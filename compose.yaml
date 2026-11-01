@@ -9,9 +9,6 @@ x-app: &app
     DB_DSN: ${DB_DSN:?copy .env.example to .env}
     HTTP_ADDR: :8080
     CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-    AUTH_PUBLIC_KEY: ${AUTH_PUBLIC_KEY:-}
-    AUTH_ISSUER: ${AUTH_ISSUER:-}
-    AUTH_AUDIENCE: ${AUTH_AUDIENCE:-}
 
 services:
   app:

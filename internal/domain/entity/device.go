@@ -20,7 +20,7 @@ var (
 )
 
 // Principal is supplied only by the verified authentication adapter.
-type Principal struct{ Issuer, Subject string }
+type Principal struct{ Issuer, Subject, SessionID, IMEI string }
 
 type RegisterDevice struct {
 	IMEIs     []string `json:"imeis"`

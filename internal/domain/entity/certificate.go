@@ -1,6 +1,11 @@
 package entity
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrCertificateState = errors.New("certificate has a successor")
 
 // Certificate contains only data approved for the public API.
 type Certificate struct {

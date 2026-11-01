@@ -41,7 +41,7 @@ make test-integration
 go test -count=1 -tags=integration -timeout=5m ./internal/infrastructure/...
 ```
 
-通常テストは入力処理・HTTP エラー・usecase と生成モック・API 定義を確認する。DB 統合テストは SQL、投影、ハッシュ、ページング、正本・スナップショットの不変性を確認する。実端末や外部チェーンの検証は含まない。
+通常テストは入力処理・HTTP エラー・usecase と生成モック・API 定義を確認する。DB 統合テストは SQL、投影、ハッシュ、ページング、正本・スナップショットの不変性、認証情報の発行・期限・更新・失効・再利用検知、他端末の操作拒否を確認する。実端末や外部チェーンの検証は含まない。
 
 ## モックと API 定義
 
