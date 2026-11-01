@@ -3,13 +3,16 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/driver/pgdriver"
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
+	"smapass-back/internal/infrastructure/database/keychallenge"
 )
 
 type Repository struct{ db *bun.DB }
@@ -18,7 +21,11 @@ func NewRepository(db *bun.DB) *Repository { return &Repository{db: db} }
 
 var _ repository.AuthRepository = (*Repository)(nil)
 
-func (r *Repository) Enroll(ctx context.Context, imei string, material entity.TokenMaterial) (*entity.TokenPair, error) {
+func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, material entity.TokenMaterial) (*entity.TokenPair, error) {
+	imei := input.IMEI
+	if input.Verified == nil {
+		return nil, entity.ErrAttestationRejected
+	}
 	var pair *entity.TokenPair
 	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", imei); err != nil {
@@ -38,6 +45,9 @@ func (r *Repository) Enroll(ctx context.Context, imei string, material entity.To
 			}
 		}
 		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", primary); err != nil {
+			return err
+		}
+		if _, err := keychallenge.Consume(ctx, tx, "enroll", primary, entity.Principal{}, []string{imei}, input.Verified); err != nil {
 			return err
 		}
 		var now time.Time
@@ -82,9 +92,21 @@ func (r *Repository) Enroll(ctx context.Context, imei string, material entity.To
 		if _, err := tx.ExecContext(ctx, "INSERT INTO app_installations (id,imei,ownership_id,created_at) VALUES (?,?,?,?)", installation, primary, ownership, now); err != nil {
 			return err
 		}
+		evidence, err := json.Marshal(input.Verified)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO device_keys (imei,ownership_id,public_key,signature_algorithm,attestation,registration_challenge_id,attestation_verified_at,imei_attested)
+			VALUES (?,?,?,'ES256',?::jsonb,?,?,?)`, primary, ownership, input.PublicKey, string(evidence), input.Verified.ChallengeID, now, input.Verified.IMEIAttested); err != nil {
+			return err
+		}
 		pair, err = issue(ctx, tx, installation, primary, material, now)
 		return err
 	})
+	var pgErr pgdriver.Error
+	if errors.As(err, &pgErr) && pgErr.Field('C') == "23505" {
+		return nil, entity.ErrDeviceConflict
+	}
 	return pair, err
 }
 

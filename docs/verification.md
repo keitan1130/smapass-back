@@ -1,6 +1,6 @@
 # 署名と改ざん検証の設計
 
-この雛形は、署名対象データを失わず保存し、参照 API で返すための土台を作る。実際の JCS 正規化・署名検証・attestation・チェーン送信・RPC 照合は実装していない。
+この雛形は、署名対象データを失わず保存し、参照 API で返すための土台を作る。計測ログの JCS 正規化・署名検証・チェーン送信・RPC 照合は実装していない。鍵登録時の Android attestation と秘密鍵保有の署名検証は実装済みで、条件は [Android 鍵登録](android-key-registration.md) を参照。
 
 ## 参照資料の違い
 
@@ -31,7 +31,7 @@ JSON のキーを独自にソートするだけで RFC 8785 対応としない�
 | leaf / node | ハッシュの対象・並び順・domain separation、奇数 leaf の処理、proof の左右 |
 | Ethereum を使う場合 | contract address、ABI、event と root / leaf の対応、ブロック番号 |
 | 再送と障害 | idempotency key、送信済み tx の再確認、retry / backoff、reorg、失敗と pending の区別 |
-| 公開鍵 | 方式・エンコード、鍵交代・失効、初期化前後の端末への結び付け |
+| 計測ログ署名 | ログ署名の転送形式と envelope。鍵登録・交代・初期化後再登録は [Android 鍵登録](android-key-registration.md) を参照 |
 | 公開範囲 | 公開ログから除外する情報と、公開可能な署名 envelope |
 
 `anchors.confirmed` はサーバーが保存した状態であり、ブラウザ検証の結果ではない。ブラウザは canonical_payload の SHA-256 を計算し、別経路の RPC で取得したチェーン情報と照合する。「一致」「不一致」「照合できず」を区別する。チェーンにハッシュがあっても計測値自体の真実性は保証しない。

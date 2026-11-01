@@ -58,6 +58,7 @@ func apiPolicy(next echo.HandlerFunc) echo.HandlerFunc {
 func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authenticate echo.MiddlewareFunc) {
 	g := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
 	g.POST("", devices.Register)
+	g.POST("/key-challenges", devices.Challenge)
 	g.POST("/lookup", devices.Lookup)
 	g.POST("/:imei/revoke", devices.Revoke)
 }
@@ -65,6 +66,7 @@ func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authent
 func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController, certificates *controller.CertificateController, authenticate echo.MiddlewareFunc) {
 	g := e.Group("/api/auth", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(2)))
 	g.POST("/devices", auth.Enroll)
+	g.POST("/challenges", auth.Challenge)
 	g.POST("/refresh", auth.Refresh)
 	g.POST("/revoke", auth.Revoke)
 	g.GET("/session", auth.Session, authenticate)
@@ -79,6 +81,12 @@ func writeError(c *echo.Context, err error) {
 	var httpErr *echo.HTTPError
 	var statusCoder echo.HTTPStatusCoder
 	switch {
+	case errors.Is(err, entity.ErrAttestationUnavailable):
+		status, code, message = 503, "attestation_unavailable", "attestation verification is unavailable"
+	case errors.Is(err, entity.ErrAttestationRejected):
+		status, code, message = 403, "attestation_rejected", "key attestation or possession proof rejected"
+	case errors.Is(err, entity.ErrChallengeInvalid):
+		status, code, message = 409, "invalid_challenge", "registration challenge invalid, expired or already used"
 	case errors.Is(err, entity.ErrUnauthenticated):
 		status, code, message = 401, "unauthorized", "valid device credentials required"
 	case errors.Is(err, entity.ErrCertificateState):

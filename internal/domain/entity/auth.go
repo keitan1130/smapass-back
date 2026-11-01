@@ -18,7 +18,10 @@ const (
 var ErrUnauthenticated = errors.New("invalid or expired credentials")
 
 type EnrollDevice struct {
-	IMEI string `json:"imei"`
+	IMEI      string       `json:"imei"`
+	PublicKey string       `json:"public_key"`
+	Proof     KeyProof     `json:"proof"`
+	Verified  *VerifiedKey `json:"-"`
 }
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`

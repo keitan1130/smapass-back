@@ -12,6 +12,17 @@ import (
 type AuthController struct{ usecase *usecase.AuthUsecase }
 
 func NewAuthController(u *usecase.AuthUsecase) *AuthController { return &AuthController{usecase: u} }
+func (c *AuthController) Challenge(ctx *echo.Context) error {
+	var input entity.EnrollmentChallengeRequest
+	if err := decodeDevice(ctx, &input); err != nil {
+		return err
+	}
+	challenge, err := c.usecase.Challenge(ctx.Request().Context(), input)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusCreated, challenge)
+}
 func (c *AuthController) Enroll(ctx *echo.Context) error {
 	var input entity.EnrollDevice
 	if err := decodeDevice(ctx, &input); err != nil {

@@ -3,7 +3,7 @@
   "info": {
     "title": "smapass-back API",
     "version": "0.1.0",
-    "description": "IMEI-managed devices with anonymous app credentials, token rotation/revocation and device/certificate write authorization. Signed log ingestion, attestation, grading, certificate issuance and chain anchoring are not implemented."
+    "description": "IMEI-managed devices with Android hardware key attestation, proof of possession and anonymous app credentials. Signed log ingestion, grading, certificate issuance and chain anchoring are not implemented."
   },
   "servers": [
     {
@@ -418,7 +418,7 @@
     "/api/devices": {
       "post": {
         "operationId": "registerDevice",
-        "summary": "Register or rotate a P-256 public key for the authenticated IMEI; enroll credentials first",
+        "summary": "Rotate an attested P-256 key with a fresh server challenge",
         "security": [
           {
             "BearerAuth": []
@@ -476,7 +476,7 @@
             }
           },
           "409": {
-            "description": "Device in use or identifier conflict",
+            "description": "Invalid, expired, reused or mismatched challenge; active IMEI or conflicting key",
             "content": {
               "application/json": {
                 "schema": {
@@ -496,7 +496,17 @@
             }
           },
           "503": {
-            "description": "Service unavailable",
+            "description": "Attestation policy unconfigured or revocation status unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Attestation or proof of possession rejected",
             "content": {
               "application/json": {
                 "schema": {
@@ -691,7 +701,7 @@
     "/api/auth/devices": {
       "post": {
         "operationId": "enrollAppInstallation",
-        "summary": "Issue anonymous device credentials by IMEI; active registration cannot be overwritten",
+        "summary": "Atomically register an attested P-256 key and issue anonymous app credentials",
         "responses": {
           "201": {
             "description": "Success",
@@ -734,7 +744,7 @@
             }
           },
           "503": {
-            "description": "Service unavailable",
+            "description": "Attestation policy unconfigured or revocation status unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -744,7 +754,17 @@
             }
           },
           "409": {
-            "description": "Active registration or conflicting state",
+            "description": "Invalid, expired, reused or mismatched challenge; active IMEI or conflicting key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Attestation or proof of possession rejected",
             "content": {
               "application/json": {
                 "schema": {
@@ -1044,6 +1064,147 @@
           }
         ]
       }
+    },
+    "/api/auth/challenges": {
+      "post": {
+        "operationId": "createEnrollmentChallenge",
+        "summary": "Create a 5-minute Android key-attestation and possession challenge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentChallengeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Key registration challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyChallenge"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid IMEI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Attestation policy is not configured or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/key-challenges": {
+      "post": {
+        "operationId": "createKeyRotationChallenge",
+        "summary": "Create a 5-minute Android key-attestation and possession challenge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotationChallengeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Key registration challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyChallenge"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid IMEI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Attestation policy is not configured or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
     }
   },
   "x-schema-overrides": {
@@ -1149,6 +1310,50 @@
     "Session": {
       "imei": {
         "pattern": "^[0-9]{15}$"
+      }
+    },
+    "KeyProof": {
+      "challenge_id": {
+        "format": "uuid"
+      },
+      "certificate_chain": {
+        "minItems": 2,
+        "maxItems": 8,
+        "items": {
+          "type": "string",
+          "maxLength": 11000,
+          "contentEncoding": "base64"
+        }
+      },
+      "signature_der": {
+        "maxLength": 112,
+        "contentEncoding": "base64"
+      }
+    },
+    "KeyChallenge": {
+      "id": {
+        "format": "uuid"
+      },
+      "attestation_challenge": {
+        "contentEncoding": "base64"
+      },
+      "signing_payload": {
+        "contentEncoding": "base64"
+      }
+    },
+    "EnrollmentChallengeRequest": {
+      "imei": {
+        "pattern": "^[0-9]{15}$"
+      }
+    },
+    "RotationChallengeRequest": {
+      "imeis": {
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9]{15}$"
+        }
       }
     }
   },

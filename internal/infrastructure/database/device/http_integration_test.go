@@ -25,8 +25,8 @@ import (
 func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	authUsecase := usecase.NewAuthUsecase(authdb.NewRepository(db))
-	deviceUsecase := usecase.NewDeviceUsecase(NewRepository(db))
+	authUsecase := usecase.NewAuthUsecase(authdb.NewRepository(db), testutil.Registration(t, db))
+	deviceUsecase := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	certs := certificate.NewRepository(db)
 	cc := controller.NewCertificateController(usecase.NewCertificateUsecase(certs))
 	app := router.New(cc, controller.NewHealthController(usecase.NewHealthUsecase(db)), []string{"http://localhost:3000"})
@@ -65,13 +65,35 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 		}
 		return p
 	}
+	enrollment := func(imei string) entity.EnrollDevice {
+		t.Helper()
+		var challenge entity.KeyChallenge
+		body := request(http.MethodPost, "/api/auth/challenges", "", entity.EnrollmentChallengeRequest{IMEI: imei}, 201)
+		if err := json.Unmarshal(body, &challenge); err != nil {
+			t.Fatal(err)
+		}
+		public, proof := testutil.Proof(t, &challenge)
+		return entity.EnrollDevice{IMEI: imei, PublicKey: public, Proof: proof}
+	}
+	rotation := func(token string, imeis ...string) entity.RegisterDevice {
+		t.Helper()
+		var challenge entity.KeyChallenge
+		body := request(http.MethodPost, "/api/devices/key-challenges", token, entity.RotationChallengeRequest{IMEIs: imeis}, 201)
+		if err := json.Unmarshal(body, &challenge); err != nil {
+			t.Fatal(err)
+		}
+		public, proof := testutil.Proof(t, &challenge)
+		return entity.RegisterDevice{IMEIs: imeis, PublicKey: public, Proof: proof}
+	}
 	request(http.MethodGet, "/certificates/000000000094821", "", nil, 200)
 	request(http.MethodGet, "/api/auth/session", "", nil, 401)
+	request(http.MethodPost, "/api/devices/key-challenges", "", entity.RotationChallengeRequest{IMEIs: []string{"490154203237518"}}, 401)
+	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "490154203237518"}, 400)
 	request(http.MethodPost, "/api/auth/devices", "", map[string]string{"imei": "bad"}, 400)
-	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "490154203237518"}, 201))
-	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: a.IMEI}, 409)
+	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("490154203237518"), 201))
+	request(http.MethodPost, "/api/auth/devices", "", enrollment(a.IMEI), 409)
 	request(http.MethodGet, "/api/auth/session", a.AccessToken, nil, 200)
-	req := input(t, a.IMEI, "356938035643809")
+	req := rotation(a.AccessToken, a.IMEI, "356938035643809")
 	request(http.MethodPost, "/api/devices", "", req, 401)
 	request(http.MethodPost, "/api/devices", a.IMEI, req, 401)
 	var device entity.Device
@@ -82,7 +104,7 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
 	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imeis": req.IMEIs, "public_key": req.PublicKey, "owner_subject": "forged"}, 400)
 	id := fixtureCertificate(t, db, &device)
-	b := decodePair(request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "000000000094821"}, 201))
+	b := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("000000000094821"), 201))
 	request(http.MethodPost, "/api/devices/lookup", b.AccessToken, lookup, 404)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)
 	request(http.MethodPost, "/api/certificates/"+id+"/revoke", b.AccessToken, nil, 404)
@@ -106,14 +128,14 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 200)
 	request(http.MethodPost, "/api/devices/356938035643809/revoke", next.AccessToken, nil, 204)
 	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 401)
-	replacement := decodePair(request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: a.IMEI}, 201))
-	request(http.MethodPost, "/api/devices", replacement.AccessToken, input(t, a.IMEI), 200)
+	replacement := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment(a.IMEI), 201))
+	request(http.MethodPost, "/api/devices", replacement.AccessToken, rotation(replacement.AccessToken, a.IMEI), 200)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", next.AccessToken, nil, 401)
 	request(http.MethodPost, "/api/auth/revoke", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 204)
 	request(http.MethodGet, "/api/auth/session", b.AccessToken, nil, 401)
 	request(http.MethodPost, "/api/auth/refresh", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 401)
 	request(http.MethodPost, "/api/auth/revoke", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 204)
-	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: b.IMEI}, 409)
+	request(http.MethodPost, "/api/auth/devices", "", enrollment(b.IMEI), 409)
 	// A browser Origin never grants permission; Android requests above have no Origin.
 	r := httptest.NewRequest(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", nil)
 	r.Header.Set(echo.HeaderOrigin, "http://localhost:3000")
