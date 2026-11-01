@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
 )
@@ -13,7 +14,7 @@ func NewDeviceUsecase(repo repository.DeviceRepository) *DeviceUsecase {
 }
 
 func validPrincipal(p entity.Principal) bool {
-	return p.Issuer != "" && p.Subject != "" && len(p.Issuer) <= 512 && len(p.Subject) <= 255
+	return p.Issuer == entity.DeviceIssuer && p.Subject != "" && p.SessionID != "" && p.IMEI != ""
 }
 
 func (u *DeviceUsecase) Register(ctx context.Context, principal entity.Principal, input entity.RegisterDevice) (*entity.Device, error) {

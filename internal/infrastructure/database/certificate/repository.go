@@ -10,6 +10,7 @@ import (
 	"github.com/uptrace/bun"
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
+	"smapass-back/internal/infrastructure/database/authorization"
 	"smapass-back/internal/infrastructure/database/dto"
 )
 
@@ -110,6 +111,39 @@ func referenceColumn(value string) string {
 		}
 	}
 	return "c.number"
+}
+
+func (r *Repository) RevokeOwned(ctx context.Context, p entity.Principal, ref string) error {
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var imei string
+		err := tx.NewRaw("SELECT c.imei FROM certificates c WHERE "+referenceColumn(ref)+"=?", ref).Scan(ctx, &imei)
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei); err != nil {
+			return err
+		}
+		if err := authorization.RequireDevice(ctx, tx, p, imei); err != nil {
+			return err
+		}
+		var status string
+		err = tx.NewRaw(`SELECT c.status FROM certificates c JOIN device_ownerships o ON o.id=c.ownership_id
+			WHERE `+referenceColumn(ref)+`=? AND o.ended_at IS NULL AND o.owner_issuer=? AND o.owner_subject=? FOR UPDATE OF c`, ref, p.Issuer, p.Subject).Scan(ctx, &status)
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if status == "superseded" {
+			return entity.ErrCertificateState
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE certificates c SET status='revoked' WHERE "+referenceColumn(ref)+"=? AND c.status='valid'", ref)
+		return err
+	})
 }
 
 func (r *Repository) FindCurrentByIMEI(ctx context.Context, imei string) (*entity.Certificate, error) {

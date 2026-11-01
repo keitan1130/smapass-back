@@ -62,3 +62,14 @@ func (u *CertificateUsecase) CurrentByIMEI(ctx context.Context, input string) (*
 	}
 	return u.repo.FindCurrentByIMEI(ctx, imei)
 }
+
+func (u *CertificateUsecase) Revoke(ctx context.Context, p entity.Principal, input string) error {
+	if !validPrincipal(p) {
+		return entity.ErrUnauthenticated
+	}
+	ref, err := entity.NormalizeCertificateReference(input)
+	if err != nil {
+		return err
+	}
+	return u.repo.RevokeOwned(ctx, p, ref)
+}

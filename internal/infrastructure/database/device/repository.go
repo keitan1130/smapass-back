@@ -11,6 +11,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
+	"smapass-back/internal/infrastructure/database/authorization"
 )
 
 type Repository struct{ db *bun.DB }
@@ -18,14 +19,6 @@ type Repository struct{ db *bun.DB }
 func NewRepository(db *bun.DB) *Repository { return &Repository{db: db} }
 
 var _ repository.DeviceRepository = (*Repository)(nil)
-
-type ownership struct {
-	ID                int64
-	OwnerIssuer       string
-	OwnerSubject      string
-	StartedAt         time.Time
-	LastVerifiedLogAt *time.Time
-}
 
 func (r *Repository) Register(ctx context.Context, principal entity.Principal, input entity.RegisterDevice) (*entity.Device, error) {
 	var result *entity.Device
@@ -45,49 +38,30 @@ func (r *Repository) Register(ctx context.Context, principal entity.Principal, i
 		if len(matches) > 1 {
 			return entity.ErrDeviceConflict
 		}
-		primary := input.IMEIs[0]
 		if len(matches) == 0 {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO devices (imei, imei_suffix) VALUES (?, ?)", primary, primary[11:]); err != nil {
-				return err
-			}
-		} else {
-			primary = matches[0]
+			return repository.ErrNotFound
 		}
+		primary := matches[0]
 		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei = ? FOR UPDATE", primary); err != nil {
+			return err
+		}
+		if err := authorization.RequireDevice(ctx, tx, principal, primary); err != nil {
 			return err
 		}
 		var now time.Time
 		if err := tx.NewRaw("SELECT clock_timestamp()").Scan(ctx, &now); err != nil {
 			return err
 		}
-		var current ownership
-		err := tx.NewRaw("SELECT id, owner_issuer, owner_subject, started_at, last_verified_log_at FROM device_ownerships WHERE imei = ? AND ended_at IS NULL", primary).Scan(ctx, &current)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		var ownershipID int64
+		if err := tx.NewRaw("SELECT id FROM device_ownerships WHERE imei = ? AND ended_at IS NULL", primary).Scan(ctx, &ownershipID); err != nil {
 			return err
-		}
-		sameOwner := err == nil && current.OwnerIssuer == principal.Issuer && current.OwnerSubject == principal.Subject
-		if current.ID != 0 && !sameOwner {
-			activity := current.StartedAt
-			if current.LastVerifiedLogAt != nil {
-				activity = *current.LastVerifiedLogAt
-			}
-			if now.Before(activity.Add(entity.DeviceReclaimAfter)) {
-				return entity.ErrDeviceInUse
-			}
-			if _, err = tx.ExecContext(ctx, "UPDATE device_ownerships SET ended_at = ? WHERE id = ?", now, current.ID); err != nil {
-				return err
-			}
-			if _, err = tx.ExecContext(ctx, "UPDATE certificates SET status = 'revoked' WHERE ownership_id = ? AND status = 'valid'", current.ID); err != nil {
-				return err
-			}
 		}
 		var activeKey struct{ ID, PublicKey string }
-		err = tx.NewRaw("SELECT id, public_key FROM device_keys WHERE imei = ? AND revoked_at IS NULL", primary).Scan(ctx, &activeKey)
+		err := tx.NewRaw("SELECT id, public_key FROM device_keys WHERE imei = ? AND revoked_at IS NULL", primary).Scan(ctx, &activeKey)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if !sameOwner || activeKey.PublicKey != input.PublicKey {
-			// A key cannot be reused by a different ownership period.
+		if activeKey.PublicKey != input.PublicKey {
 			var exists bool
 			if err := tx.NewRaw("SELECT EXISTS (SELECT 1 FROM device_keys WHERE public_key = ?)", input.PublicKey).Scan(ctx, &exists); err != nil {
 				return err
@@ -98,14 +72,7 @@ func (r *Repository) Register(ctx context.Context, principal entity.Principal, i
 			if _, err := tx.ExecContext(ctx, "UPDATE device_keys SET revoked_at = ? WHERE imei = ? AND revoked_at IS NULL", now, primary); err != nil {
 				return err
 			}
-		}
-		if !sameOwner {
-			if err := tx.NewRaw("INSERT INTO device_ownerships (imei, owner_issuer, owner_subject, started_at) VALUES (?, ?, ?, ?) RETURNING id", primary, principal.Issuer, principal.Subject, now).Scan(ctx, &current.ID); err != nil {
-				return err
-			}
-		}
-		if !sameOwner || activeKey.PublicKey != input.PublicKey {
-			if err := tx.NewRaw("INSERT INTO device_keys (imei, ownership_id, public_key, signature_algorithm) VALUES (?, ?, ?, 'ES256') RETURNING id", primary, current.ID, input.PublicKey).Scan(ctx, &activeKey.ID); err != nil {
+			if err := tx.NewRaw("INSERT INTO device_keys (imei, ownership_id, public_key, signature_algorithm) VALUES (?, ?, ?, 'ES256') RETURNING id", primary, ownershipID, input.PublicKey).Scan(ctx, &activeKey.ID); err != nil {
 				return err
 			}
 		}
@@ -144,6 +111,9 @@ func (r *Repository) Revoke(ctx context.Context, principal entity.Principal, ime
 		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei = ? FOR UPDATE", primary); err != nil {
 			return err
 		}
+		if err := authorization.RequireDevice(ctx, tx, principal, primary); err != nil {
+			return err
+		}
 		var id int64
 		err = tx.NewRaw(`SELECT id FROM device_ownerships WHERE imei = ? AND ended_at IS NULL
 			AND owner_issuer = ? AND owner_subject = ?`, primary, principal.Issuer, principal.Subject).Scan(ctx, &id)
@@ -158,6 +128,9 @@ func (r *Repository) Revoke(ctx context.Context, principal entity.Principal, ime
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE device_ownerships SET ended_at = ? WHERE id = ?", now, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE app_installations SET revoked_at=? WHERE ownership_id=? AND revoked_at IS NULL", now, id); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE device_keys SET revoked_at = ? WHERE ownership_id = ? AND revoked_at IS NULL", now, id); err != nil {

@@ -358,6 +358,18 @@
         ],
         "type": "object"
       },
+      "EnrollDevice": {
+        "properties": {
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imei"
+        ],
+        "type": "object"
+      },
       "Error": {
         "properties": {
           "error": {
@@ -643,6 +655,17 @@
         ],
         "type": "object"
       },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "type": "object"
+      },
       "RegisterDevice": {
         "properties": {
           "imeis": {
@@ -662,6 +685,18 @@
         "required": [
           "imeis",
           "public_key"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "properties": {
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imei"
         ],
         "type": "object"
       },
@@ -823,6 +858,42 @@
         ],
         "type": "object"
       },
+      "TokenPair": {
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "expires_in": {
+            "const": 900,
+            "format": "int32",
+            "type": "integer"
+          },
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
+          },
+          "refresh_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "token_type": {
+            "const": "Bearer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imei",
+          "access_token",
+          "refresh_token",
+          "token_type",
+          "expires_in",
+          "refresh_expires_at"
+        ],
+        "type": "object"
+      },
       "VerificationRecord": {
         "properties": {
           "anchor_state": {
@@ -950,19 +1021,289 @@
     },
     "securitySchemes": {
       "BearerAuth": {
-        "bearerFormat": "RS256 JWT",
+        "bearerFormat": "Opaque device access token",
         "scheme": "bearer",
         "type": "http"
       }
     }
   },
   "info": {
-    "description": "IMEI-managed device registration and certificate reads. JWT token issuance, signed log ingestion, grading, certificate issuance and chain anchoring are not implemented.",
+    "description": "IMEI-managed devices with anonymous app credentials, token rotation/revocation and device/certificate write authorization. Signed log ingestion, attestation, grading, certificate issuance and chain anchoring are not implemented.",
     "title": "smapass-back API",
     "version": "0.1.0"
   },
   "openapi": "3.2.1",
   "paths": {
+    "/api/auth/devices": {
+      "post": {
+        "operationId": "enrollAppInstallation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid or expired device credentials"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Active registration or conflicting state"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable"
+          }
+        },
+        "summary": "Issue anonymous device credentials by IMEI; active registration cannot be overwritten"
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "operationId": "refreshDeviceCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid or expired device credentials"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable"
+          }
+        },
+        "summary": "Rotate tokens; reuse revokes the installation credentials"
+      }
+    },
+    "/api/auth/revoke": {
+      "post": {
+        "operationId": "revokeDeviceCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid or expired device credentials"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable"
+          }
+        },
+        "summary": "Idempotently revoke all tokens for this installation; registration is retained"
+      }
+    },
+    "/api/auth/session": {
+      "get": {
+        "operationId": "getDeviceSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid or expired device credentials"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Current authenticated primary IMEI"
+      }
+    },
     "/api/certificates": {
       "get": {
         "operationId": "listCertificates",
@@ -1251,6 +1592,93 @@
         "summary": "Read frozen certificate evidence, ordered by sequence"
       }
     },
+    "/api/certificates/{number}/revoke": {
+      "post": {
+        "operationId": "revokeOwnedCertificate",
+        "parameters": [
+          {
+            "description": "Certificate UUID or short certificate number",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid or expired device credentials"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found or not in this installation registration"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Active registration or conflicting state"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Revoke one certificate in the current device registration; preserve evidence and device keys"
+      }
+    },
     "/api/devices": {
       "post": {
         "operationId": "registerDevice",
@@ -1333,7 +1761,7 @@
                 }
               }
             },
-            "description": "Authentication not configured or unavailable"
+            "description": "Service unavailable"
           }
         },
         "security": [
@@ -1341,7 +1769,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Register or reclaim after 15 days"
+        "summary": "Register or rotate a P-256 public key for the authenticated IMEI; enroll credentials first"
       }
     },
     "/api/devices/lookup": {
@@ -1436,7 +1864,7 @@
                 }
               }
             },
-            "description": "Authentication not configured or unavailable"
+            "description": "Service unavailable"
           }
         },
         "security": [
@@ -1513,7 +1941,7 @@
                 }
               }
             },
-            "description": "Authentication not configured or unavailable"
+            "description": "Service unavailable"
           }
         },
         "security": [

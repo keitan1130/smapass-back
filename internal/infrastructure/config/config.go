@@ -8,18 +8,14 @@ import (
 )
 
 type Config struct {
-	HTTPAddr      string
-	DBDSN         string
-	CORSOrigins   []string
-	AuthPublicKey string
-	AuthIssuer    string
-	AuthAudience  string
+	HTTPAddr    string
+	DBDSN       string
+	CORSOrigins []string
 }
 
 // Load reads process environment. Compose loads .env; binaries do not.
 func Load() (Config, error) {
 	c := Config{HTTPAddr: os.Getenv("HTTP_ADDR"), DBDSN: os.Getenv("DB_DSN")}
-	c.AuthPublicKey, c.AuthIssuer, c.AuthAudience = os.Getenv("AUTH_PUBLIC_KEY"), os.Getenv("AUTH_ISSUER"), os.Getenv("AUTH_AUDIENCE")
 	if c.HTTPAddr == "" {
 		c.HTTPAddr = ":8080"
 	}

@@ -5,54 +5,34 @@ package device
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
+	"errors"
 	"fmt"
+	"github.com/labstack/echo/v5"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/infrastructure/auth"
+	authdb "smapass-back/internal/infrastructure/database/auth"
 	"smapass-back/internal/infrastructure/database/certificate"
 	"smapass-back/internal/infrastructure/database/testutil"
 	"smapass-back/internal/infrastructure/router"
 	"smapass-back/internal/interface/controller"
 	"smapass-back/internal/usecase"
+	"testing"
 )
 
-func TestDeviceHTTPAuthenticationAndReclaim(t *testing.T) {
+func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	db := testutil.NewDatabase(t)
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	public := pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: x509.MarshalPKCS1PublicKey(&key.PublicKey)})
-	verifier, err := auth.NewVerifier(string(public), "test-issuer", "smapass")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := router.New(
-		controller.NewCertificateController(usecase.NewCertificateUsecase(certificate.NewRepository(db))),
-		controller.NewHealthController(usecase.NewHealthUsecase(db)), []string{"http://localhost:3000"})
-	router.AddDeviceRoutes(app, controller.NewDeviceController(usecase.NewDeviceUsecase(NewRepository(db))), verifier.Middleware)
-	token := func(subject string) string {
-		t.Helper()
-		value, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{
-			Issuer: "test-issuer", Subject: subject, Audience: jwt.ClaimStrings{"smapass"},
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		}).SignedString(key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return value
-	}
-	alice, bob := token("alice"), token("bob")
+	ctx := context.Background()
+	authUsecase := usecase.NewAuthUsecase(authdb.NewRepository(db))
+	deviceUsecase := usecase.NewDeviceUsecase(NewRepository(db))
+	certs := certificate.NewRepository(db)
+	cc := controller.NewCertificateController(usecase.NewCertificateUsecase(certs))
+	app := router.New(cc, controller.NewHealthController(usecase.NewHealthUsecase(db)), []string{"http://localhost:3000"})
+	authenticate := auth.Middleware(authUsecase.Authenticate)
+	router.AddDeviceRoutes(app, controller.NewDeviceController(deviceUsecase), authenticate)
+	router.AddAuthRoutes(app, controller.NewAuthController(authUsecase), cc, authenticate)
 	requestNumber := 0
 	request := func(method, path, bearer string, body any, status int) []byte {
 		t.Helper()
@@ -70,42 +50,77 @@ func TestDeviceHTTPAuthenticationAndReclaim(t *testing.T) {
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, r)
 		if w.Code != status {
-			t.Fatalf("%s %s: got %d, want %d: %s", method, path, w.Code, status, w.Body.String())
+			t.Fatalf("%s %s got %d want %d", method, path, w.Code, status)
 		}
 		if w.Header().Get("Cache-Control") != "no-store" {
-			t.Fatal("device response must not be cached")
+			t.Fatal("response is cacheable")
 		}
 		return w.Body.Bytes()
 	}
-	request(http.MethodGet, "/certificates/000000000094821", "", nil, 200)
-	request(http.MethodGet, "/certificates/1234", "", nil, 400)
-	registration := input(t, "490154203237518")
-	request(http.MethodPost, "/api/devices", "", registration, 401)
-	response := request(http.MethodPost, "/api/devices", alice, registration, 200)
-	var first entity.Device
-	if err := json.Unmarshal(response, &first); err != nil || first.IMEI != registration.IMEIs[0] {
-		t.Fatalf("invalid registration response: %v", err)
+	decodePair := func(body []byte) entity.TokenPair {
+		t.Helper()
+		var p entity.TokenPair
+		if err := json.Unmarshal(body, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
 	}
-	lookup := map[string]string{"imei": first.IMEI}
-	request(http.MethodPost, "/api/devices/lookup", alice, lookup, 200)
-	request(http.MethodPost, "/api/devices/lookup", bob, lookup, 404)
-	request(http.MethodPost, "/api/devices", alice, map[string]any{
-		"imeis": registration.IMEIs, "public_key": registration.PublicKey, "owner_subject": "bob",
-	}, 400)
-	bobRegistration := input(t, first.IMEI)
-	request(http.MethodPost, "/api/devices", bob, bobRegistration, 409)
-	if _, err := db.ExecContext(context.Background(), "UPDATE device_ownerships SET started_at = clock_timestamp() - interval '15 days' WHERE id = ?", first.OwnershipID); err != nil {
+	request(http.MethodGet, "/certificates/000000000094821", "", nil, 200)
+	request(http.MethodGet, "/api/auth/session", "", nil, 401)
+	request(http.MethodPost, "/api/auth/devices", "", map[string]string{"imei": "bad"}, 400)
+	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "490154203237518"}, 201))
+	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: a.IMEI}, 409)
+	request(http.MethodGet, "/api/auth/session", a.AccessToken, nil, 200)
+	req := input(t, a.IMEI, "356938035643809")
+	request(http.MethodPost, "/api/devices", "", req, 401)
+	request(http.MethodPost, "/api/devices", a.IMEI, req, 401)
+	var device entity.Device
+	if err := json.Unmarshal(request(http.MethodPost, "/api/devices", a.AccessToken, req, 200), &device); err != nil {
 		t.Fatal(err)
 	}
-	request(http.MethodPost, "/api/devices", bob, bobRegistration, 200)
-	request(http.MethodPost, "/api/devices/lookup", alice, lookup, 404)
-	request(http.MethodPost, "/api/devices/lookup", bob, lookup, 200)
-	request(http.MethodPost, "/api/devices/"+first.IMEI+"/revoke", "", nil, 401)
-	request(http.MethodPost, "/api/devices/"+first.IMEI+"/revoke", alice, nil, 404)
-	request(http.MethodPost, "/api/devices/"+first.IMEI+"/revoke", bob, nil, 204)
-	request(http.MethodPost, "/api/devices/lookup", bob, lookup, 404)
-	request(http.MethodPost, "/api/devices", alice, input(t, first.IMEI), 200)
-	// An old registration must not be able to revoke the next owner's registration.
-	request(http.MethodPost, "/api/devices/"+first.IMEI+"/revoke", bob, nil, 404)
-	request(http.MethodPost, "/api/devices/lookup", alice, lookup, 200)
+	lookup := map[string]string{"imei": a.IMEI}
+	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
+	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imeis": req.IMEIs, "public_key": req.PublicKey, "owner_subject": "forged"}, 400)
+	id := fixtureCertificate(t, db, &device)
+	b := decodePair(request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "000000000094821"}, 201))
+	request(http.MethodPost, "/api/devices/lookup", b.AccessToken, lookup, 404)
+	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)
+	request(http.MethodPost, "/api/certificates/"+id+"/revoke", b.AccessToken, nil, 404)
+	request(http.MethodPost, "/api/certificates/"+id+"/revoke", "", nil, 401)
+	request(http.MethodPost, "/api/certificates/02ABCDEFGH/revoke", a.AccessToken, nil, 204)
+	request(http.MethodPost, "/api/certificates/"+id+"/revoke", a.AccessToken, nil, 204)
+	historical, err := certs.FindByNumber(ctx, id)
+	if err != nil || historical.Status != "revoked" {
+		t.Fatalf("revocation missing: %v", err)
+	}
+	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
+	stale, err := authUsecase.Authenticate(ctx, a.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := decodePair(request(http.MethodPost, "/api/auth/refresh", "", entity.RefreshRequest{RefreshToken: a.RefreshToken}, 200))
+	request(http.MethodGet, "/api/auth/session", a.AccessToken, nil, 401)
+	if _, err = deviceUsecase.Register(ctx, stale, req); !errors.Is(err, entity.ErrUnauthenticated) {
+		t.Fatalf("transaction accepted stale session: %v", err)
+	}
+	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 200)
+	request(http.MethodPost, "/api/devices/356938035643809/revoke", next.AccessToken, nil, 204)
+	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 401)
+	replacement := decodePair(request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: a.IMEI}, 201))
+	request(http.MethodPost, "/api/devices", replacement.AccessToken, input(t, a.IMEI), 200)
+	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", next.AccessToken, nil, 401)
+	request(http.MethodPost, "/api/auth/revoke", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 204)
+	request(http.MethodGet, "/api/auth/session", b.AccessToken, nil, 401)
+	request(http.MethodPost, "/api/auth/refresh", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 401)
+	request(http.MethodPost, "/api/auth/revoke", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 204)
+	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: b.IMEI}, 409)
+	// A browser Origin never grants permission; Android requests above have no Origin.
+	r := httptest.NewRequest(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", nil)
+	r.Header.Set(echo.HeaderOrigin, "http://localhost:3000")
+	r.RemoteAddr = "198.51.100.1:1234"
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+	if w.Code != 401 || w.Header().Get(echo.HeaderAccessControlAllowOrigin) != "http://localhost:3000" {
+		t.Fatal("CORS was used as authorization")
+	}
 }

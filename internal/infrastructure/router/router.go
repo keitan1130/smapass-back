@@ -62,6 +62,15 @@ func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authent
 	g.POST("/:imei/revoke", devices.Revoke)
 }
 
+func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController, certificates *controller.CertificateController, authenticate echo.MiddlewareFunc) {
+	g := e.Group("/api/auth", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(2)))
+	g.POST("/devices", auth.Enroll)
+	g.POST("/refresh", auth.Refresh)
+	g.POST("/revoke", auth.Revoke)
+	g.GET("/session", auth.Session, authenticate)
+	e.POST("/api/certificates/:number/revoke", certificates.Revoke, middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
+}
+
 func writeError(c *echo.Context, err error) {
 	if response, _ := echo.UnwrapResponse(c.Response()); response != nil && response.Committed {
 		return
@@ -70,6 +79,10 @@ func writeError(c *echo.Context, err error) {
 	var httpErr *echo.HTTPError
 	var statusCoder echo.HTTPStatusCoder
 	switch {
+	case errors.Is(err, entity.ErrUnauthenticated):
+		status, code, message = 401, "unauthorized", "valid device credentials required"
+	case errors.Is(err, entity.ErrCertificateState):
+		status, code, message = 409, "certificate_has_successor", "certificate has a successor"
 	case errors.Is(err, entity.ErrInvalidNumber):
 		status, code, message = 400, "invalid_number", "specify valid certificate numbers (1 to 50 ids for list)"
 	case errors.Is(err, entity.ErrInvalidDevice):

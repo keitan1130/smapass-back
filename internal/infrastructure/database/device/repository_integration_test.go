@@ -18,6 +18,7 @@ import (
 	"github.com/uptrace/bun"
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
+	authdb "smapass-back/internal/infrastructure/database/auth"
 	"smapass-back/internal/infrastructure/database/certificate"
 	"smapass-back/internal/infrastructure/database/testutil"
 	"smapass-back/internal/usecase"
@@ -36,54 +37,6 @@ func input(t *testing.T, imeis ...string) entity.RegisterDevice {
 	return entity.RegisterDevice{IMEIs: imeis, PublicKey: string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))}
 }
 
-func TestRegistrationLookupAndReclaim(t *testing.T) {
-	db := testutil.NewDatabase(t)
-	u := usecase.NewDeviceUsecase(NewRepository(db))
-	ctx := context.Background()
-	a := entity.Principal{Issuer: "test", Subject: "alice"}
-	b := entity.Principal{Issuer: "test", Subject: "bob"}
-	request := input(t, "490154203237518", "356938035643809")
-	first, err := u.Register(ctx, a, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.IMEI != request.IMEIs[0] || len(first.IMEIs) != 2 {
-		t.Fatalf("bad registered device: %+v", first)
-	}
-	again, err := u.Register(ctx, a, request)
-	if err != nil || again.OwnershipID != first.OwnershipID || !again.RegisteredAt.Equal(first.RegisteredAt) {
-		t.Fatalf("registration is not idempotent: %+v %v", again, err)
-	}
-	rotated, err := u.Register(ctx, a, input(t, request.IMEIs...))
-	if err != nil || rotated.OwnershipID != first.OwnershipID || rotated.KeyID == first.KeyID {
-		t.Fatalf("key rotation failed: %+v %v", rotated, err)
-	}
-	if _, err = u.Lookup(ctx, a, request.IMEIs[1]); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = u.Lookup(ctx, b, request.IMEIs[0]); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("another owner can search: %v", err)
-	}
-	if _, err = u.Register(ctx, b, input(t, request.IMEIs[1])); !errors.Is(err, entity.ErrDeviceInUse) {
-		t.Fatalf("active registration was reclaimed: %v", err)
-	}
-	// Exactly 15 days is inclusive. A same-owner registration above did not renew activity.
-	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at = clock_timestamp() - interval '15 days' WHERE id = ?", first.OwnershipID); err != nil {
-		t.Fatal(err)
-	}
-	claimed, err := u.Register(ctx, b, input(t, request.IMEIs[1]))
-	if err != nil || claimed.IMEI != first.IMEI || claimed.OwnershipID == first.OwnershipID {
-		t.Fatalf("reclaim failed: %+v %v", claimed, err)
-	}
-	if _, err = u.Lookup(ctx, a, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("previous owner retained access: %v", err)
-	}
-	var active int
-	if err = db.NewRaw("SELECT count(*) FROM device_keys WHERE imei = ? AND revoked_at IS NULL", first.IMEI).Scan(ctx, &active); err != nil || active != 1 {
-		t.Fatalf("active key count=%d: %v", active, err)
-	}
-}
-
 func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool) error {
 	var marker any
 	if verified {
@@ -99,41 +52,111 @@ func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, 
 	return err
 }
 
-func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
-	db := testutil.NewDatabase(t)
-	u := usecase.NewDeviceUsecase(NewRepository(db))
-	ctx := context.Background()
-	a := entity.Principal{Issuer: "test", Subject: "alice"}
-	first, err := u.Register(ctx, a, input(t, "490154203237518"))
+func credentials(t *testing.T, db *bun.DB, imei string) (*usecase.AuthUsecase, *entity.TokenPair, entity.Principal) {
+	t.Helper()
+	u := usecase.NewAuthUsecase(authdb.NewRepository(db))
+	pair, err := u.Enroll(context.Background(), entity.EnrollDevice{IMEI: imei})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at = now() - interval '30 days' WHERE id = ?", first.OwnershipID); err != nil {
+	p, err := u.Authenticate(context.Background(), pair.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u, pair, p
+}
+
+func TestRegistrationLookupAndReclaim(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	ctx := context.Background()
+	u := usecase.NewDeviceUsecase(NewRepository(db))
+	auth, old, a := credentials(t, db, "490154203237518")
+	request := input(t, "490154203237518", "356938035643809")
+	first, err := u.Register(ctx, a, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := u.Register(ctx, a, request)
+	if err != nil || again.OwnershipID != first.OwnershipID || !again.RegisteredAt.Equal(first.RegisteredAt) {
+		t.Fatalf("idempotency failed: %v", err)
+	}
+	rotated, err := u.Register(ctx, a, input(t, request.IMEIs...))
+	if err != nil || rotated.KeyID == first.KeyID || rotated.OwnershipID != first.OwnershipID {
+		t.Fatalf("key rotation: %v", err)
+	}
+	if _, err = u.Lookup(ctx, a, request.IMEIs[1]); err != nil {
+		t.Fatal(err)
+	}
+	_, _, other := credentials(t, db, "000000000094821")
+	if _, err = u.Lookup(ctx, other, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("other installation lookup: %v", err)
+	}
+	if _, err = u.Register(ctx, other, input(t, first.IMEI)); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("other installation write: %v", err)
+	}
+	if _, err = auth.Enroll(ctx, entity.EnrollDevice{IMEI: request.IMEIs[1]}); !errors.Is(err, entity.ErrDeviceInUse) {
+		t.Fatalf("early reclaim: %v", err)
+	}
+	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '15 days' WHERE id=?", first.OwnershipID); err != nil {
+		t.Fatal(err)
+	}
+	next, err := auth.Enroll(ctx, entity.EnrollDevice{IMEI: request.IMEIs[1]})
+	if err != nil || next.IMEI != first.IMEI {
+		t.Fatalf("alias reclaim: %v", err)
+	}
+	b, err := auth.Authenticate(ctx, next.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := u.Register(ctx, b, input(t, request.IMEIs[1]))
+	if err != nil || claimed.OwnershipID == first.OwnershipID {
+		t.Fatalf("key after reclaim: %v", err)
+	}
+	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
+		t.Fatalf("old credential accepted: %v", err)
+	}
+	if _, err = u.Lookup(ctx, a, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("old owner lookup: %v", err)
+	}
+	var active int
+	if err = db.NewRaw("SELECT count(*) FROM device_keys WHERE imei=? AND revoked_at IS NULL", first.IMEI).Scan(ctx, &active); err != nil || active != 1 {
+		t.Fatalf("active keys=%d: %v", active, err)
+	}
+}
+
+func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	ctx := context.Background()
+	u := usecase.NewDeviceUsecase(NewRepository(db))
+	auth, _, a := credentials(t, db, "490154203237518")
+	first, err := u.Register(ctx, a, input(t, a.IMEI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=now()-interval '30 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
 	if err = insertLog(ctx, db, first, 1, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = u.Register(ctx, entity.Principal{Issuer: "test", Subject: "bob"}, input(t, first.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, entity.EnrollDevice{IMEI: first.IMEI}); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("verified activity ignored: %v", err)
 	}
-	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET last_verified_log_at = now() - interval '15 days' WHERE id = ?", first.OwnershipID); err != nil {
+	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET last_verified_log_at=now()-interval '15 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
 	if err = insertLog(ctx, db, first, 2, false); err != nil {
 		t.Fatal(err)
 	}
-	// Unverified data must not renew the 15-day timer.
-	requests := []entity.RegisterDevice{input(t, first.IMEI), input(t, first.IMEI)}
 	errorsCh := make(chan error, 2)
 	var wg sync.WaitGroup
-	for i, subject := range []string{"bob", "carol"} {
+	for range 2 {
 		wg.Add(1)
-		go func(i int, subject string) {
+		go func() {
 			defer wg.Done()
-			_, err := u.Register(ctx, entity.Principal{Issuer: "test", Subject: subject}, requests[i])
+			_, err := auth.Enroll(ctx, entity.EnrollDevice{IMEI: first.IMEI})
 			errorsCh <- err
-		}(i, subject)
+		}()
 	}
 	wg.Wait()
 	close(errorsCh)
@@ -148,78 +171,95 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 		}
 	}
 	if success != 1 || rejected != 1 {
-		t.Fatalf("concurrent claim results: %d / %d", success, rejected)
+		t.Fatalf("claims %d/%d", success, rejected)
 	}
 	if err = insertLog(ctx, db, first, 3, true); err == nil {
-		t.Fatal("previous owner inserted a log after reclaim")
+		t.Fatal("old owner inserted log")
 	}
 }
 
 func TestPublicCertificateStopsFollowingPreviousOwner(t *testing.T) {
 	db := testutil.NewDatabase(t)
-	certs := certificate.NewRepository(db)
 	ctx := context.Background()
+	certs := certificate.NewRepository(db)
 	before, err := certs.FindCurrentByIMEI(ctx, "000000000094821")
-	if err != nil || before.Number != "01ABCDEFGH" {
-		t.Fatalf("demo pass unavailable: %+v %v", before, err)
-	}
-	u := usecase.NewDeviceUsecase(NewRepository(db))
-	if _, err = u.Register(ctx, entity.Principal{Issuer: "test", Subject: "new-owner"}, input(t, before.IMEI)); err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
+	credentials(t, db, before.IMEI)
 	if _, err = certs.FindCurrentByIMEI(ctx, before.IMEI); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("previous owner's pass is current: %v", err)
+		t.Fatalf("old certificate current: %v", err)
 	}
-	if historical, err := certs.FindByNumber(ctx, before.ID); err != nil || historical.Status != "revoked" {
-		t.Fatalf("historical certificate must remain revoked: %+v %v", historical, err)
+	if old, err := certs.FindByNumber(ctx, before.ID); err != nil || old.Status != "revoked" {
+		t.Fatalf("history lost: %v", err)
 	}
+}
+
+// A fixture certificate is created directly; this does not implement certificate issuance or signature verification.
+func fixtureCertificate(t *testing.T, db *bun.DB, device *entity.Device) string {
+	t.Helper()
+	var id string
+	err := db.NewRaw("INSERT INTO certificates (imei,ownership_id,number,issued_at,is_demo,snapshot) VALUES (?,?,'02ABCDEFGH',clock_timestamp(),true,'{}') RETURNING id", device.IMEI, device.OwnershipID).Scan(context.Background(), &id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }
 
 func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	db := testutil.NewDatabase(t)
-	u := usecase.NewDeviceUsecase(NewRepository(db))
 	ctx := context.Background()
-	alice := entity.Principal{Issuer: "test", Subject: "alice"}
-	bob := entity.Principal{Issuer: "test", Subject: "bob"}
-	const imei = "000000000094821"
-	// Assign the existing demo fixture to the test principal without changing its signed evidence.
-	if _, err := db.ExecContext(ctx, "UPDATE device_ownerships SET owner_issuer = ?, owner_subject = ?, started_at = clock_timestamp() WHERE imei = ?", alice.Issuer, alice.Subject, imei); err != nil {
+	u := usecase.NewDeviceUsecase(NewRepository(db))
+	auth, old, a := credentials(t, db, "490154203237518")
+	first, err := u.Register(ctx, a, input(t, a.IMEI, "356938035643809"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := u.Lookup(ctx, alice, imei)
-	if err != nil {
+	if err = insertLog(ctx, db, first, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	id := fixtureCertificate(t, db, first)
+	if _, err = db.ExecContext(ctx, "INSERT INTO certificate_logs (certificate_id,imei,log_id) SELECT ?,imei,id FROM device_logs WHERE imei=?", id, a.IMEI); err != nil {
 		t.Fatal(err)
 	}
 	certs := certificate.NewRepository(db)
-	before, err := certs.FindCurrentByIMEI(ctx, imei)
+	before, err := certs.FindByNumber(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = u.Revoke(ctx, bob, imei); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("another owner revoked a registration: %v", err)
+	_, _, other := credentials(t, db, "000000000094821")
+	if err = u.Revoke(ctx, other, a.IMEI); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("other installation revoked: %v", err)
 	}
-	if err = u.Revoke(ctx, alice, imei); err != nil {
+	if err = u.Revoke(ctx, a, "356938035643809"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = certs.FindCurrentByIMEI(ctx, imei); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("revoked certificate is public current: %v", err)
+	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
+		t.Fatalf("revoked installation authenticated: %v", err)
 	}
-	historical, err := certs.FindByNumber(ctx, before.ID)
+	historical, err := certs.FindByNumber(ctx, id)
 	if err != nil || historical.Status != "revoked" || !historical.IssuedAt.Equal(before.IssuedAt) {
-		t.Fatalf("historical certificate lost: %+v %v", historical, err)
+		t.Fatalf("history lost: %v", err)
 	}
-	_, count, err := certs.Records(ctx, before.ID, 100, 0)
-	if err != nil || count != 28 {
-		t.Fatalf("historical evidence lost: %d %v", count, err)
+	_, count, err := certs.Records(ctx, id, 100, 0)
+	if err != nil || count != 1 {
+		t.Fatalf("evidence lost: %d %v", count, err)
 	}
-	if err = insertLog(ctx, db, first, 29, true); err == nil {
-		t.Fatal("revoked registration inserted a log")
+	if err = insertLog(ctx, db, first, 2, true); err == nil {
+		t.Fatal("revoked key accepted")
 	}
-	claimed, err := u.Register(ctx, bob, input(t, imei))
-	if err != nil || claimed.OwnershipID == first.OwnershipID {
-		t.Fatalf("manual revocation did not release immediately: %+v %v", claimed, err)
+	next, err := auth.Enroll(ctx, entity.EnrollDevice{IMEI: a.IMEI})
+	if err != nil {
+		t.Fatalf("immediate reclaim: %v", err)
 	}
-	if err = u.Revoke(ctx, alice, imei); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("previous owner revoked new registration: %v", err)
+	b, err := auth.Authenticate(ctx, next.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = u.Register(ctx, b, input(t, a.IMEI)); err != nil {
+		t.Fatal(err)
+	}
+	if err = u.Revoke(ctx, a, a.IMEI); !errors.Is(err, entity.ErrUnauthenticated) {
+		t.Fatalf("old session revoked new owner: %v", err)
 	}
 }

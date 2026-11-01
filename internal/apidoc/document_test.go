@@ -74,6 +74,7 @@ func TestDocumentedRoutesMatchRouter(t *testing.T) {
 	repo := mock.NewMockCertificateRepository(gomock.NewController(t))
 	app := router.New(controller.NewCertificateController(usecase.NewCertificateUsecase(repo)), controller.NewHealthController(nil), nil)
 	router.AddDeviceRoutes(app, controller.NewDeviceController(nil), func(next echo.HandlerFunc) echo.HandlerFunc { return next })
+	router.AddAuthRoutes(app, controller.NewAuthController(nil), controller.NewCertificateController(nil), func(next echo.HandlerFunc) echo.HandlerFunc { return next })
 	actual := map[string]bool{}
 	for _, route := range app.Router().Routes() {
 		// Echo also registers internal group fallback routes; only concrete routes are API operations.
