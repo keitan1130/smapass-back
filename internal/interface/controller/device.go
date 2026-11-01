@@ -18,7 +18,7 @@ func NewDeviceController(u *usecase.DeviceUsecase) *DeviceController {
 }
 
 func decodeDevice(c *echo.Context, value any) error {
-	decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 16<<10))
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 128<<10))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
@@ -27,6 +27,22 @@ func decodeDevice(c *echo.Context, value any) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "one JSON object is required")
 	}
 	return nil
+}
+
+func (c *DeviceController) Challenge(ctx *echo.Context) error {
+	p, ok := auth.Principal(ctx.Request().Context())
+	if !ok {
+		return entity.ErrUnauthenticated
+	}
+	var input entity.RotationChallengeRequest
+	if err := decodeDevice(ctx, &input); err != nil {
+		return err
+	}
+	challenge, err := c.usecase.Challenge(ctx.Request().Context(), p, input)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusCreated, challenge)
 }
 
 func (c *DeviceController) Register(ctx *echo.Context) error {

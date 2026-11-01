@@ -23,8 +23,10 @@ var (
 type Principal struct{ Issuer, Subject, SessionID, IMEI string }
 
 type RegisterDevice struct {
-	IMEIs     []string `json:"imeis"`
-	PublicKey string   `json:"public_key"`
+	IMEIs     []string     `json:"imeis"`
+	PublicKey string       `json:"public_key"`
+	Proof     KeyProof     `json:"proof"`
+	Verified  *VerifiedKey `json:"-"`
 }
 
 type Device struct {
@@ -35,6 +37,8 @@ type Device struct {
 	LastVerifiedLogAt *time.Time `json:"last_verified_log_at"`
 	ReclaimableAt     time.Time  `json:"reclaimable_at"`
 	KeyID             string     `json:"key_id"`
+	KeyAttested       bool       `json:"key_attested"`
+	IMEIAttested      bool       `json:"imei_attested"`
 }
 
 func NormalizeIMEI(input string) (string, error) {

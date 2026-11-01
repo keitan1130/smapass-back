@@ -4,18 +4,35 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
 type Config struct {
-	HTTPAddr    string
-	DBDSN       string
-	CORSOrigins []string
+	HTTPAddr               string
+	DBDSN                  string
+	CORSOrigins            []string
+	AttestationPackage     string
+	AttestationDigests     []string
+	AttestationRequireIMEI bool
 }
 
 // Load reads process environment. Compose loads .env; binaries do not.
 func Load() (Config, error) {
 	c := Config{HTTPAddr: os.Getenv("HTTP_ADDR"), DBDSN: os.Getenv("DB_DSN")}
+	c.AttestationPackage = strings.TrimSpace(os.Getenv("ATTESTATION_PACKAGE_NAME"))
+	for _, digest := range strings.Split(os.Getenv("ATTESTATION_SIGNING_SHA256"), ",") {
+		if digest = strings.TrimSpace(digest); digest != "" {
+			c.AttestationDigests = append(c.AttestationDigests, digest)
+		}
+	}
+	if value := os.Getenv("ATTESTATION_REQUIRE_IMEI"); value != "" {
+		flag, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("ATTESTATION_REQUIRE_IMEI must be true or false")
+		}
+		c.AttestationRequireIMEI = flag
+	}
 	if c.HTTPAddr == "" {
 		c.HTTPAddr = ":8080"
 	}

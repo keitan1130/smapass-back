@@ -4,11 +4,6 @@ package device
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"strconv"
 	"sync"
@@ -24,17 +19,9 @@ import (
 	"smapass-back/internal/usecase"
 )
 
-func input(t *testing.T, imeis ...string) entity.RegisterDevice {
+func input(t *testing.T, db *bun.DB, p entity.Principal, imeis ...string) entity.RegisterDevice {
 	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return entity.RegisterDevice{IMEIs: imeis, PublicKey: string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))}
+	return testutil.Rotation(t, db, p, imeis...)
 }
 
 func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool) error {
@@ -54,8 +41,8 @@ func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, 
 
 func credentials(t *testing.T, db *bun.DB, imei string) (*usecase.AuthUsecase, *entity.TokenPair, entity.Principal) {
 	t.Helper()
-	u := usecase.NewAuthUsecase(authdb.NewRepository(db))
-	pair, err := u.Enroll(context.Background(), entity.EnrollDevice{IMEI: imei})
+	u := usecase.NewAuthUsecase(authdb.NewRepository(db), testutil.Registration(t, db))
+	pair, err := u.Enroll(context.Background(), testutil.Enrollment(t, db, imei))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,9 +56,9 @@ func credentials(t *testing.T, db *bun.DB, imei string) (*usecase.AuthUsecase, *
 func TestRegistrationLookupAndReclaim(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	u := usecase.NewDeviceUsecase(NewRepository(db))
+	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, old, a := credentials(t, db, "490154203237518")
-	request := input(t, "490154203237518", "356938035643809")
+	request := input(t, db, a, "490154203237518", "356938035643809")
 	first, err := u.Register(ctx, a, request)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +67,7 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if err != nil || again.OwnershipID != first.OwnershipID || !again.RegisteredAt.Equal(first.RegisteredAt) {
 		t.Fatalf("idempotency failed: %v", err)
 	}
-	rotated, err := u.Register(ctx, a, input(t, request.IMEIs...))
+	rotated, err := u.Register(ctx, a, input(t, db, a, request.IMEIs...))
 	if err != nil || rotated.KeyID == first.KeyID || rotated.OwnershipID != first.OwnershipID {
 		t.Fatalf("key rotation: %v", err)
 	}
@@ -91,16 +78,16 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if _, err = u.Lookup(ctx, other, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation lookup: %v", err)
 	}
-	if _, err = u.Register(ctx, other, input(t, first.IMEI)); !errors.Is(err, repository.ErrNotFound) {
+	if _, err = u.Register(ctx, other, input(t, db, other, first.IMEI)); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation write: %v", err)
 	}
-	if _, err = auth.Enroll(ctx, entity.EnrollDevice{IMEI: request.IMEIs[1]}); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1])); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("early reclaim: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '15 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
-	next, err := auth.Enroll(ctx, entity.EnrollDevice{IMEI: request.IMEIs[1]})
+	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1]))
 	if err != nil || next.IMEI != first.IMEI {
 		t.Fatalf("alias reclaim: %v", err)
 	}
@@ -108,7 +95,7 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := u.Register(ctx, b, input(t, request.IMEIs[1]))
+	claimed, err := u.Register(ctx, b, input(t, db, b, request.IMEIs[1]))
 	if err != nil || claimed.OwnershipID == first.OwnershipID {
 		t.Fatalf("key after reclaim: %v", err)
 	}
@@ -127,9 +114,9 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	u := usecase.NewDeviceUsecase(NewRepository(db))
+	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, _, a := credentials(t, db, "490154203237518")
-	first, err := u.Register(ctx, a, input(t, a.IMEI))
+	first, err := u.Register(ctx, a, input(t, db, a, a.IMEI))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +126,7 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	if err = insertLog(ctx, db, first, 1, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = auth.Enroll(ctx, entity.EnrollDevice{IMEI: first.IMEI}); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, first.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("verified activity ignored: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET last_verified_log_at=now()-interval '15 days' WHERE id=?", first.OwnershipID); err != nil {
@@ -150,11 +137,12 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	}
 	errorsCh := make(chan error, 2)
 	var wg sync.WaitGroup
-	for range 2 {
+	requests := []entity.EnrollDevice{testutil.Enrollment(t, db, first.IMEI), testutil.Enrollment(t, db, first.IMEI)}
+	for i := range 2 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := auth.Enroll(ctx, entity.EnrollDevice{IMEI: first.IMEI})
+			_, err := auth.Enroll(ctx, requests[i])
 			errorsCh <- err
 		}()
 	}
@@ -209,9 +197,9 @@ func fixtureCertificate(t *testing.T, db *bun.DB, device *entity.Device) string 
 func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	u := usecase.NewDeviceUsecase(NewRepository(db))
+	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, old, a := credentials(t, db, "490154203237518")
-	first, err := u.Register(ctx, a, input(t, a.IMEI, "356938035643809"))
+	first, err := u.Register(ctx, a, input(t, db, a, a.IMEI, "356938035643809"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +236,7 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if err = insertLog(ctx, db, first, 2, true); err == nil {
 		t.Fatal("revoked key accepted")
 	}
-	next, err := auth.Enroll(ctx, entity.EnrollDevice{IMEI: a.IMEI})
+	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, a.IMEI))
 	if err != nil {
 		t.Fatalf("immediate reclaim: %v", err)
 	}
@@ -256,7 +244,7 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = u.Register(ctx, b, input(t, a.IMEI)); err != nil {
+	if _, err = u.Register(ctx, b, input(t, db, b, a.IMEI)); err != nil {
 		t.Fatal(err)
 	}
 	if err = u.Revoke(ctx, a, a.IMEI); !errors.Is(err, entity.ErrUnauthenticated) {

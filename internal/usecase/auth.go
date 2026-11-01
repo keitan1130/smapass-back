@@ -7,16 +7,32 @@ import (
 	"smapass-back/internal/domain/repository"
 )
 
-type AuthUsecase struct{ repo repository.AuthRepository }
+type AuthUsecase struct {
+	repo repository.AuthRepository
+	keys *KeyRegistrationUsecase
+}
 
-func NewAuthUsecase(repo repository.AuthRepository) *AuthUsecase { return &AuthUsecase{repo: repo} }
+func NewAuthUsecase(repo repository.AuthRepository, keys *KeyRegistrationUsecase) *AuthUsecase {
+	return &AuthUsecase{repo: repo, keys: keys}
+}
 
 func (u *AuthUsecase) Enroll(ctx context.Context, input entity.EnrollDevice) (*entity.TokenPair, error) {
 	imei, err := entity.NormalizeIMEI(input.IMEI)
 	if err != nil {
 		return nil, err
 	}
-	return u.repo.Enroll(ctx, imei, entity.NewTokenMaterial())
+	registration := entity.RegisterDevice{IMEIs: []string{imei}, PublicKey: input.PublicKey, Proof: input.Proof}
+	if err := u.keys.Verify(ctx, "enroll", entity.Principal{}, &registration); err != nil {
+		return nil, err
+	}
+	input.IMEI = imei
+	input.PublicKey = registration.PublicKey
+	input.Verified = registration.Verified
+	return u.repo.Enroll(ctx, input, entity.NewTokenMaterial())
+}
+
+func (u *AuthUsecase) Challenge(ctx context.Context, input entity.EnrollmentChallengeRequest) (*entity.KeyChallenge, error) {
+	return u.keys.EnrollmentChallenge(ctx, input)
 }
 func (u *AuthUsecase) Refresh(ctx context.Context, input entity.RefreshRequest) (*entity.TokenPair, error) {
 	if !entity.ValidToken(input.RefreshToken, "rt") {

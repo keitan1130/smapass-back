@@ -7,10 +7,13 @@ import (
 	"smapass-back/internal/domain/repository"
 )
 
-type DeviceUsecase struct{ repo repository.DeviceRepository }
+type DeviceUsecase struct {
+	repo repository.DeviceRepository
+	keys *KeyRegistrationUsecase
+}
 
-func NewDeviceUsecase(repo repository.DeviceRepository) *DeviceUsecase {
-	return &DeviceUsecase{repo: repo}
+func NewDeviceUsecase(repo repository.DeviceRepository, keys *KeyRegistrationUsecase) *DeviceUsecase {
+	return &DeviceUsecase{repo: repo, keys: keys}
 }
 
 func validPrincipal(p entity.Principal) bool {
@@ -21,10 +24,14 @@ func (u *DeviceUsecase) Register(ctx context.Context, principal entity.Principal
 	if !validPrincipal(principal) {
 		return nil, entity.ErrInvalidDevice
 	}
-	if err := input.Normalize(); err != nil {
+	if err := u.keys.Verify(ctx, "rotate", principal, &input); err != nil {
 		return nil, err
 	}
 	return u.repo.Register(ctx, principal, input)
+}
+
+func (u *DeviceUsecase) Challenge(ctx context.Context, p entity.Principal, input entity.RotationChallengeRequest) (*entity.KeyChallenge, error) {
+	return u.keys.RotationChallenge(ctx, p, input)
 }
 
 func (u *DeviceUsecase) Lookup(ctx context.Context, principal entity.Principal, input string) (*entity.Device, error) {

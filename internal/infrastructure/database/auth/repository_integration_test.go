@@ -15,8 +15,8 @@ import (
 func TestTokenRotationReplayRevocationAndExpiry(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	u := usecase.NewAuthUsecase(NewRepository(db))
-	a, err := u.Enroll(ctx, entity.EnrollDevice{IMEI: "490154203237518"})
+	u := usecase.NewAuthUsecase(NewRepository(db), testutil.Registration(t, db))
+	a, err := u.Enroll(ctx, testutil.Enrollment(t, db, "490154203237518"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestTokenRotationReplayRevocationAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A second independent installation remains usable and can renew after access expiry.
-	b, err := u.Enroll(ctx, entity.EnrollDevice{IMEI: "356938035643809"})
+	b, err := u.Enroll(ctx, testutil.Enrollment(t, db, "356938035643809"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +82,8 @@ func TestTokenRotationReplayRevocationAndExpiry(t *testing.T) {
 func TestConcurrentRefreshDetectsReuse(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	u := usecase.NewAuthUsecase(NewRepository(db))
-	a, err := u.Enroll(ctx, entity.EnrollDevice{IMEI: "490154203237518"})
+	u := usecase.NewAuthUsecase(NewRepository(db), testutil.Registration(t, db))
+	a, err := u.Enroll(ctx, testutil.Enrollment(t, db, "490154203237518"))
 	if err != nil {
 		t.Fatal(err)
 	}

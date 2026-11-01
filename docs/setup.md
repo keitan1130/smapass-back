@@ -47,6 +47,9 @@ curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2&offse
 | `DB_DSN` | `postgres://smapass:smapass_local@db:5432/smapass?sslmode=disable` | API と migrate の接続先 |
 | `API_PORT` | `8080` | ホストから API に接続するポート |
 | `DB_PORT` | `5433` | ホストから DB に接続するポート |
+| `ATTESTATION_PACKAGE_NAME` | 未設定 | 許可する Android の applicationId |
+| `ATTESTATION_SIGNING_SHA256` | 未設定 | 許可するアプリ署名証明書 SHA-256。カンマ区切り |
+| `ATTESTATION_REQUIRE_IMEI` | `false` | IMEI 自体のハードウェア attestation も必須にする |
 | `CORS_ORIGINS` | `http://localhost:3000` | ブラウザの許可 Origin。カンマ区切り。末尾 `/` やパスを付けない |
 | `HTTP_ADDR` | `:8080` | Go 単体起動時の待受先。Compose 内は `:8080` 固定 |
 
@@ -56,7 +59,7 @@ API / DB のホストへの公開は `127.0.0.1` のみ。Compose 内の通信�
 
 `.env` は Compose が読み込む。Go バイナリは `.env` を自動で読まない。
 
-認証用の追加設定や署名用サーバー秘密鍵は不要。アプリは `POST /api/auth/devices` に IMEI を送り、返された端末用トークンを内部で管理する。書き込み時は `Authorization: Bearer <access token>` を付ける。[認証と Android 接続](authentication.md) を参照。
+サーバーの署名用秘密鍵は不要。初回登録・鍵交換を使う場合は、Android アプリのパッケージ名と署名証明書 SHA-256 を設定する。アプリはチャレンジを取得して鍵・attestation・署名を作り、登録後の端末用トークンを内部で管理する。書き込み時は `Authorization: Bearer <access token>` を付ける。[認証と Android 接続](authentication.md) を参照。
 
 ## 日常の操作
 
@@ -123,3 +126,5 @@ DB 統合テストは通常テストから分けている。Testcontainers が�
 | 証明書が404 | デモは自動投入しない。seed の実行と番号 `01ABC-DEFGH` を確認 |
 | 429 | API は直接接続元 IP ごとに秒間10リクエスト相当。少し待って再試行 |
 | ブラウザだけ CORS エラー | Web の Origin が `CORS_ORIGINS` に含まれるか。Origin は scheme / host / port の完全一致 |
+
+attestation 設定がない場合は公開参照が動き、チャレンジ・初回登録・鍵交換は503になる。設定例・検証条件と Android 側の処理は [Android 鍵登録](android-key-registration.md) を参照。両設定は実際の APK に合わせ、例示のパッケージ名を許可値にしない。

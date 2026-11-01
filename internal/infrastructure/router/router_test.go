@@ -3,12 +3,14 @@ package router
 import (
 	"context"
 	"errors"
+	"github.com/labstack/echo/v5"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
+	"smapass-back/internal/infrastructure/attestation"
 	"smapass-back/internal/interface/controller"
 	"smapass-back/internal/usecase"
 )
@@ -17,6 +19,27 @@ type missingRepository struct{}
 
 func (missingRepository) RevokeOwned(context.Context, entity.Principal, string) error {
 	return repository.ErrNotFound
+}
+
+func TestUnconfiguredAttestationFailsClosed(t *testing.T) {
+	v, err := attestation.NewVerifier(attestation.Policy{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := usecase.NewKeyRegistrationUsecase(nil, v)
+	auth := controller.NewAuthController(usecase.NewAuthUsecase(nil, keys))
+	certificates := controller.NewCertificateController(usecase.NewCertificateUsecase(missingRepository{}))
+	app := New(certificates, controller.NewHealthController(nil), nil)
+	AddAuthRoutes(app, auth, certificates, func(next echo.HandlerFunc) echo.HandlerFunc { return next })
+	for i, path := range []string{"/api/auth/challenges", "/api/auth/devices"} {
+		r := httptest.NewRequest("POST", path, strings.NewReader(`{"imei":"490154203237518"}`))
+		r.RemoteAddr = []string{"192.0.2.1:1234", "192.0.2.2:1234"}[i]
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, r)
+		if w.Code != 503 || !strings.Contains(w.Body.String(), "attestation_unavailable") {
+			t.Fatalf("unconfigured key registration status=%d", w.Code)
+		}
+	}
 }
 
 func (missingRepository) FindCurrentByIMEI(context.Context, string) (*entity.Certificate, error) {

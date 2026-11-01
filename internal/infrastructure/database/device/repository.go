@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"slices"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
 	"smapass-back/internal/infrastructure/database/authorization"
+	"smapass-back/internal/infrastructure/database/keychallenge"
 )
 
 type Repository struct{ db *bun.DB }
@@ -56,10 +58,27 @@ func (r *Repository) Register(ctx context.Context, principal entity.Principal, i
 		if err := tx.NewRaw("SELECT id FROM device_ownerships WHERE imei = ? AND ended_at IS NULL", primary).Scan(ctx, &ownershipID); err != nil {
 			return err
 		}
-		var activeKey struct{ ID, PublicKey string }
-		err := tx.NewRaw("SELECT id, public_key FROM device_keys WHERE imei = ? AND revoked_at IS NULL", primary).Scan(ctx, &activeKey)
+		var activeKey struct {
+			ID, PublicKey           string
+			RegistrationChallengeID *string
+		}
+		err := tx.NewRaw("SELECT id, public_key,registration_challenge_id FROM device_keys WHERE imei = ? AND revoked_at IS NULL", primary).Scan(ctx, &activeKey)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		used, err := keychallenge.Consume(ctx, tx, "rotate", primary, principal, input.IMEIs, input.Verified)
+		if err != nil {
+			return err
+		}
+		if used {
+			if activeKey.PublicKey != input.PublicKey || activeKey.RegistrationChallengeID == nil || *activeKey.RegistrationChallengeID != input.Verified.ChallengeID {
+				return entity.ErrChallengeInvalid
+			}
+			result, err = findOwned(ctx, tx, principal, primary)
+			return err
+		}
+		if activeKey.PublicKey == input.PublicKey {
+			return entity.ErrDeviceConflict
 		}
 		if activeKey.PublicKey != input.PublicKey {
 			var exists bool
@@ -72,7 +91,11 @@ func (r *Repository) Register(ctx context.Context, principal entity.Principal, i
 			if _, err := tx.ExecContext(ctx, "UPDATE device_keys SET revoked_at = ? WHERE imei = ? AND revoked_at IS NULL", now, primary); err != nil {
 				return err
 			}
-			if err := tx.NewRaw("INSERT INTO device_keys (imei, ownership_id, public_key, signature_algorithm) VALUES (?, ?, ?, 'ES256') RETURNING id", primary, ownershipID, input.PublicKey).Scan(ctx, &activeKey.ID); err != nil {
+			evidence, err := json.Marshal(input.Verified)
+			if err != nil {
+				return err
+			}
+			if err := tx.NewRaw(`INSERT INTO device_keys (imei, ownership_id, public_key, signature_algorithm,attestation,registration_challenge_id,attestation_verified_at,imei_attested) VALUES (?, ?, ?, 'ES256',?::jsonb,?,?,?) RETURNING id`, primary, ownershipID, input.PublicKey, string(evidence), input.Verified.ChallengeID, now, input.Verified.IMEIAttested).Scan(ctx, &activeKey.ID); err != nil {
 				return err
 			}
 		}
@@ -145,7 +168,7 @@ func findOwned(ctx context.Context, db bun.IDB, principal entity.Principal, imei
 	var result entity.Device
 	err := db.NewRaw(`SELECT d.imei, o.id AS ownership_id, o.started_at AS registered_at,
 		o.last_verified_log_at, COALESCE(o.last_verified_log_at, o.started_at) + interval '360 hours' AS reclaimable_at,
-		k.id AS key_id FROM device_imei_aliases a JOIN devices d ON d.imei = a.primary_imei
+		k.id AS key_id,(k.attestation_verified_at IS NOT NULL) AS key_attested,k.imei_attested FROM device_imei_aliases a JOIN devices d ON d.imei = a.primary_imei
 		JOIN device_ownerships o ON o.imei = d.imei AND o.ended_at IS NULL
 		JOIN device_keys k ON k.ownership_id = o.id AND k.revoked_at IS NULL
 		WHERE a.imei = ? AND o.owner_issuer = ? AND o.owner_subject = ?`, imei, principal.Issuer, principal.Subject).Scan(ctx, &result)

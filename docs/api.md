@@ -11,12 +11,14 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 | GET | `/health` | プロセス生存。`{"status":"ok"}` |
 | GET | `/ready` | DB に Ping。正常200、接続不可503 |
 | GET | `/certificates/{imei}` | 現在の登録者の最新の有効な証明書。未発行なら404 |
-| POST | `/api/auth/devices` | IMEI で端末の認証情報を発行。成功201、使用中409、再登録は15日ルール |
+| POST | `/api/auth/challenges` | 初回登録用の5分間有効なチャレンジ。本文は imei、成功201 |
+| POST | `/api/devices/key-challenges` | 鍵交換用チャレンジ。本文は imeis、アクセストークン必須、成功201 |
+| POST | `/api/auth/devices` | IMEI・公開鍵・attestation・所有確認用署名を検証し、認証情報と鍵を登録。成功201、使用中409、再登録は15日ルール |
 | POST | `/api/auth/refresh` | 認証情報を更新。成功200、旧トークンを再利用するとそのアプリの認証情報を失効 |
 | POST | `/api/auth/revoke` | リフレッシュトークンで認証情報だけを失効。成功204 |
 | GET | `/api/auth/session` | 現在の認証対象 IMEI。アクセストークン必須 |
 | POST | `/api/certificates/{number}/revoke` | 現在の端末登録の証明書1件だけを失効。アクセストークン必須、成功204 |
-| POST | `/api/devices` | 認証情報を発行した端末の公開鍵の登録・更新。端末用アクセストークン必須 |
+| POST | `/api/devices` | 認証済み端末の公開鍵を、新しいチャレンジと attestation で交代。端末用アクセストークン必須 |
 | POST | `/api/devices/lookup` | IMEI による自分の端末の検索。端末用アクセストークン必須 |
 | POST | `/api/devices/{imei}/revoke` | 自分の登録・鍵・有効な証明書を手動失効。成功204、次の登録は即時可能。端末用アクセストークン必須 |
 | GET | `/api/certificates/{number}` | 証明書 UUID または短い番号で1件。不存在404 |
@@ -103,3 +105,5 @@ API 処理には5秒の context timeout、readiness には2秒を設定。ブラ
 認証、入力、15日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書 API のパス中の `number` と一括取得の `ids` は、証明書 UUID も受け付ける。
 
 認証情報の有効期間、保存、再登録と失効の違いは [authentication.md](authentication.md) を参照。CORS は閲覧用 Web の接続制限であり、書き込み権限には使わない。
+
+初回登録・鍵交換は `proof` が必須。証明書チェーンと所有確認用署名は非公開として扱う。[Android 鍵登録](android-key-registration.md) の条件・エラー・接続手順を参照。
