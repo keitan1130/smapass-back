@@ -28,11 +28,14 @@ curl -f http://localhost:8080/ready
 ```bash
 docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/seeds/development.sql
 curl -f http://localhost:8080/api/certificates/01ABC-DEFGH
+curl -f http://localhost:8080/certificates/000000000094821
 curl -f 'http://localhost:8080/api/certificates?ids=01ABCDEFGH'
 curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2&offset=0'
 ```
 
-デモ投入は繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
+デモ投入は登録者を変更する前なら繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
+
+既存の UUID 管理の DB を更新する場合、デモ以外の端末には確認済みの IMEI 全桁との対応表が必要。[IMEI 移行手順](device-registration.md#既存データの移行)を先に確認する。既存 DB を削除して作り直さない。
 
 ## 設定
 
@@ -52,6 +55,8 @@ API / DB のホストへの公開は `127.0.0.1` のみ。Compose 内の通信�
 `POSTGRES_*` は初回の DB ボリューム作成時に使われる。既存ボリュームがある状態で `.env` を変えても DB 内のユーザーやパスワードは変わらない。
 
 `.env` は Compose が読み込む。Go バイナリは `.env` を自動で読まない。
+
+認証用の追加設定や署名用サーバー秘密鍵は不要。アプリは `POST /api/auth/devices` に IMEI を送り、返された端末用トークンを内部で管理する。書き込み時は `Authorization: Bearer <access token>` を付ける。[認証と Android 接続](authentication.md) を参照。
 
 ## 日常の操作
 
@@ -105,7 +110,7 @@ make test-integration
 
 DB 統合テストは通常テストから分けている。Testcontainers がテストごとに PostgreSQL 18.6 を新規起動し、現行マイグレーションとテスト用データを投入する。接続ポートは自動で選び、終わったらコンテナを削除する。通常の Compose、`.env`、`TEST_DB_DSN` は使わず、事前の DB 準備も不要。
 
-証明書・出品先・ページング・28件のハッシュと前ハッシュ、正本とスナップショットの更新拒否を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
+証明書・出品先・ページング・28件のハッシュと前ハッシュ、正本とスナップショットの更新拒否、IMEI の登録・検索・15日ルール・手動失効・同時登録、トークン付き HTTP 入出力・認証情報のローテーション・再利用検知・失効、旧 UUID からの移行を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
 
 ## よくある問題
 

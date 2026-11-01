@@ -84,7 +84,7 @@ func Generate(source []byte) ([]byte, error) {
 			return nil, fmt.Errorf("unsupported public response type: %s", t)
 		}
 	}
-	for _, root := range []any{entity.Certificate{}, schema.Certificates{}, schema.Records{}, schema.Error{}, schema.Health{}} {
+	for _, root := range []any{entity.Certificate{}, entity.Device{}, entity.RegisterDevice{}, entity.TokenPair{}, entity.EnrollDevice{}, entity.RefreshRequest{}, schema.Session{}, schema.Certificates{}, schema.Records{}, schema.Error{}, schema.Health{}} {
 		if _, err := describe(reflect.TypeOf(root)); err != nil {
 			return nil, err
 		}
@@ -110,6 +110,10 @@ func Generate(source []byte) ([]byte, error) {
 	}
 	delete(document, "x-schema-overrides")
 	document["components"] = object{"schemas": schemas}
+	if schemes, ok := document["x-security-schemes"]; ok {
+		document["components"].(object)["securitySchemes"] = schemes
+		delete(document, "x-security-schemes")
+	}
 	result, err := json.MarshalIndent(document, "", "  ")
 	return append(result, '\n'), err
 }

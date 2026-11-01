@@ -21,8 +21,10 @@
 | 記録一覧の全列 | `snapshot.status_history` | 取得日時、OS / SDK、温度、サイクル、電荷、起動回数、異常終了、熱的余裕 |
 | ブックマーク | Web の localStorage | バックエンドへの保存は不要 |
 | 出品用カード画像の機種・評価・発行日 | 詳細 API の同じ値 | PNG / QR / OGP の描画は Next.js |
-| カードの URL / 証明書番号 | `number` と Web の正規ドメイン | URL は Web が `/c/{number}` として組み立てる |
+| カードの URL / 証明書番号 | `imei` と Web の正規ドメイン | 公開 URL は Web が `/certificates/{imei}` として組み立てる。証明書単位の過去参照には `id` または `number` を使う |
 | 説明文用テキスト / URL コピー | Web | Go の専用生成 API は設けない |
 | 整備履歴 | `snapshot.maintenance_records` | 項目の場所のみ。登録・評価連携は今後 |
 
 画面の「写真」をストレージにアップロードする機能は、この雛形の範囲には含めていない。添付は画面仕様の参考であり、カード PNG は Web が都度生成する。将来、端末の実写真を保存する場合も S3 は導入せず、PostgreSQL の `BYTEA` と MIME・サイズ・撮影時刻・公開範囲・関連記録を設計する。容量制限と閲覧認可を決めてから実装する。
+
+公開入口は IMEI に変更した。Go の `GET /certificates/{imei}` は JSON を返す。Web の同名ページの実装は Web 側で行い、現在の証明書がない場合は404を扱う。

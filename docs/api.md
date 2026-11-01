@@ -10,7 +10,16 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 | --- | --- | --- |
 | GET | `/health` | プロセス生存。`{"status":"ok"}` |
 | GET | `/ready` | DB に Ping。正常200、接続不可503 |
-| GET | `/api/certificates/{number}` | 証明書1件。不存在404 |
+| GET | `/certificates/{imei}` | 現在の登録者の最新の有効な証明書。未発行なら404 |
+| POST | `/api/auth/devices` | IMEI で端末の認証情報を発行。成功201、使用中409、再登録は15日ルール |
+| POST | `/api/auth/refresh` | 認証情報を更新。成功200、旧トークンを再利用するとそのアプリの認証情報を失効 |
+| POST | `/api/auth/revoke` | リフレッシュトークンで認証情報だけを失効。成功204 |
+| GET | `/api/auth/session` | 現在の認証対象 IMEI。アクセストークン必須 |
+| POST | `/api/certificates/{number}/revoke` | 現在の端末登録の証明書1件だけを失効。アクセストークン必須、成功204 |
+| POST | `/api/devices` | 認証情報を発行した端末の公開鍵の登録・更新。端末用アクセストークン必須 |
+| POST | `/api/devices/lookup` | IMEI による自分の端末の検索。端末用アクセストークン必須 |
+| POST | `/api/devices/{imei}/revoke` | 自分の登録・鍵・有効な証明書を手動失効。成功204、次の登録は即時可能。端末用アクセストークン必須 |
+| GET | `/api/certificates/{number}` | 証明書 UUID または短い番号で1件。不存在404 |
 | GET | `/api/certificates?ids=a,b,c` | `{"items":[...]}`。1〜50番号、重複除去、存在するものを番号昇順で返す |
 | GET | `/api/certificates/{number}/records` | 発行時に含めた検証用記録。連番昇順。ページングあり |
 
@@ -24,7 +33,9 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 | 項目 | 意味 |
 | --- | --- |
-| `number` | 公開番号10文字 |
+| `id` | 証明書の UUID。端末の管理 ID ではない |
+| `imei` | 端末の主 IMEI 全桁。公開 URL に使用 |
+| `number` | 互換性と手入力用の番号10文字 |
 | `status` | `valid` / `revoked` / `superseded`。証明書の有効状態で、暗号学的な検証結果ではない |
 | `successor_number` | 再発行済みの場合の後継番号。それ以外は null |
 | `issued_at` | 発行日時 |
@@ -79,10 +90,16 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 API 全体に直接接続元 IP ごとのメモリ内レート制限（10リクエスト/秒相当・バースト10）を置く。ヘルスチェックは対象外。単一インスタンスの開発設定で、プロキシ配下では同じ IP に集約される。`X-Forwarded-For` は信用しない。共有ストアと信頼するプロキシの範囲は本番時に設計する。
 
-`CORS_ORIGINS` の明示 Origin に GET / OPTIONS を許可する。認証 Cookie は使わない。API は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow` を返す。公開番号は閲覧用の秘密情報として扱い、HTTP ログに URI / query は残さない。
+`CORS_ORIGINS` の明示 Origin に GET / POST / OPTIONS と Authorization ヘッダーを許可する。認証 Cookie は使わない。API は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow` を返す。公開番号は閲覧用の秘密情報として扱い、HTTP ログに URI / query は残さない。
 
 API 処理には5秒の context timeout、readiness には2秒を設定。ブラウザの検証は API 障害・RPC 障害を「照合できず」として扱い、不一致と混同しない。
 
 ## 未実装 API
 
-ログ登録、証明書発行、失効・再発行、出品先の更新、事業者の整備記録登録は未実装。認証方式と対象への認可、署名検証を定義してから契約を追加する。`/api/me/bookmarks` と画像生成 API は提供しない。Web 側でブラウザ保存・カード画像生成を担当する。
+ログ登録、証明書発行・再発行、出品先の更新、事業者の整備記録登録は未実装。`/api/me/bookmarks` と画像生成 API は提供しない。Web 側でブラウザ保存・カード画像生成を担当する。
+
+## 端末登録と再登録
+
+認証、入力、15日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書 API のパス中の `number` と一括取得の `ids` は、証明書 UUID も受け付ける。
+
+認証情報の有効期間、保存、再登録と失効の違いは [authentication.md](authentication.md) を参照。CORS は閲覧用 Web の接続制限であり、書き込み権限には使わない。

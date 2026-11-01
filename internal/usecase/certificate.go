@@ -17,7 +17,7 @@ func NewCertificateUsecase(repo repository.CertificateRepository) *CertificateUs
 }
 
 func (u *CertificateUsecase) Get(ctx context.Context, input string) (*entity.Certificate, error) {
-	number, err := entity.NormalizeNumber(input)
+	number, err := entity.NormalizeCertificateReference(input)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func (u *CertificateUsecase) List(ctx context.Context, inputs []string) ([]entit
 	numbers := make([]string, 0, len(inputs))
 	seen := make(map[string]bool)
 	for _, input := range inputs {
-		number, err := entity.NormalizeNumber(input)
+		number, err := entity.NormalizeCertificateReference(input)
 		if err != nil {
 			return nil, err
 		}
@@ -44,7 +44,7 @@ func (u *CertificateUsecase) List(ctx context.Context, inputs []string) ([]entit
 }
 
 func (u *CertificateUsecase) Records(ctx context.Context, input string, limit, offset int) ([]entity.VerificationRecord, int, error) {
-	number, err := entity.NormalizeNumber(input)
+	number, err := entity.NormalizeCertificateReference(input)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -53,4 +53,23 @@ func (u *CertificateUsecase) Records(ctx context.Context, input string, limit, o
 		return nil, 0, err
 	}
 	return u.repo.Records(ctx, number, limit, offset)
+}
+
+func (u *CertificateUsecase) CurrentByIMEI(ctx context.Context, input string) (*entity.Certificate, error) {
+	imei, err := entity.NormalizeIMEI(input)
+	if err != nil {
+		return nil, err
+	}
+	return u.repo.FindCurrentByIMEI(ctx, imei)
+}
+
+func (u *CertificateUsecase) Revoke(ctx context.Context, p entity.Principal, input string) error {
+	if !validPrincipal(p) {
+		return entity.ErrUnauthenticated
+	}
+	ref, err := entity.NormalizeCertificateReference(input)
+	if err != nil {
+		return err
+	}
+	return u.repo.RevokeOwned(ctx, p, ref)
 }

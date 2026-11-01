@@ -6,6 +6,10 @@ type Health struct {
 	Status string `json:"status"`
 }
 
+type Session struct {
+	IMEI string `json:"imei"`
+}
+
 type Error struct {
 	Error ErrorDetail `json:"error"`
 }

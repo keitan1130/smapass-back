@@ -15,6 +15,14 @@ import (
 
 type missingRepository struct{}
 
+func (missingRepository) RevokeOwned(context.Context, entity.Principal, string) error {
+	return repository.ErrNotFound
+}
+
+func (missingRepository) FindCurrentByIMEI(context.Context, string) (*entity.Certificate, error) {
+	return nil, repository.ErrNotFound
+}
+
 func (missingRepository) FindByNumber(context.Context, string) (*entity.Certificate, error) {
 	return nil, repository.ErrNotFound
 }

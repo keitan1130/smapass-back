@@ -22,6 +22,18 @@ import (
 // NewDatabase creates an isolated PostgreSQL per test. No external DSN is used.
 func NewDatabase(t testing.TB) *bun.DB {
 	t.Helper()
+	database := NewDatabaseAtVersion(t, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := database.ExecContext(ctx, seeds.Development); err != nil {
+		t.Fatalf("seed test database: %v", err)
+	}
+	return database
+}
+
+// NewDatabaseAtVersion leaves data empty. Zero applies all current migrations.
+func NewDatabaseAtVersion(t testing.TB, version uint) *bun.DB {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	container, err := postgres.Run(ctx, "postgres:18.6-alpine3.24",
@@ -44,7 +56,12 @@ func NewDatabase(t testing.TB) *bun.DB {
 		_ = source.Close()
 		t.Fatal("initialize test migrations")
 	}
-	if err = m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	if version == 0 {
+		err = m.Up()
+	} else {
+		err = m.Migrate(version)
+	}
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		_, _ = m.Close()
 		t.Fatalf("migrate test database: %v", err)
 	}
@@ -56,8 +73,5 @@ func NewDatabase(t testing.TB) *bun.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	if _, err = database.ExecContext(ctx, seeds.Development); err != nil {
-		t.Fatalf("seed test database: %v", err)
-	}
 	return database
 }
