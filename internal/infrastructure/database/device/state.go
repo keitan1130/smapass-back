@@ -63,13 +63,14 @@ func (r *Repository) FindState(ctx context.Context, imei string) (*entity.Device
 		if err == nil {
 			state.Spec = &spec
 		}
-		var status entity.StatusRecord
+		var status dto.StatusRecord
 		err = statusQuery(tx, &status).Where("s.imei=?", primary).OrderExpr("l.seq DESC").Limit(1).Scan(ctx)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		if err == nil {
-			state.Status = &status
+			value := status.Entity()
+			state.Status = &value
 			if state.Spec != nil {
 				state.Spec.OSVersion = &status.OSVersion
 				state.Spec.SDKInt = &status.SDKInt
@@ -109,7 +110,7 @@ func statusQuery(db bun.IDB, model any) *bun.SelectQuery {
 }
 
 func (r *Repository) StatusHistory(ctx context.Context, imei string, limit, offset int) ([]entity.StatusRecord, int, error) {
-	items := make([]entity.StatusRecord, 0)
+	rows := make([]dto.StatusRecord, 0)
 	var total int
 	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
 		primary, err := publicPrimary(ctx, tx, imei)
@@ -119,7 +120,14 @@ func (r *Repository) StatusHistory(ctx context.Context, imei string, limit, offs
 		if err := tx.NewRaw("SELECT count(*) FROM device_status WHERE imei=?", primary).Scan(ctx, &total); err != nil {
 			return err
 		}
-		return statusQuery(tx, &items).Where("s.imei=?", primary).OrderExpr("l.seq ASC").Limit(int64(limit)).Offset(int64(offset)).Scan(ctx)
+		return statusQuery(tx, &rows).Where("s.imei=?", primary).OrderExpr("l.seq ASC").Limit(int64(limit)).Offset(int64(offset)).Scan(ctx)
 	})
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]entity.StatusRecord, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.Entity())
+	}
 	return items, total, err
 }
