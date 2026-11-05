@@ -36,49 +36,34 @@ func (m *MockCertificateRepository) EXPECT() *MockCertificateRepositoryMockRecor
 	return m.recorder
 }
 
-// FindByNumber mocks base method.
-func (m *MockCertificateRepository) FindByNumber(arg0 context.Context, arg1 string) (*entity.Certificate, error) {
+// FindLatestByIMEI mocks base method.
+func (m *MockCertificateRepository) FindLatestByIMEI(arg0 context.Context, arg1 string) (*entity.Certificate, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindByNumber", arg0, arg1)
+	ret := m.ctrl.Call(m, "FindLatestByIMEI", arg0, arg1)
 	ret0, _ := ret[0].(*entity.Certificate)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FindByNumber indicates an expected call of FindByNumber.
-func (mr *MockCertificateRepositoryMockRecorder) FindByNumber(arg0, arg1 any) *gomock.Call {
+// FindLatestByIMEI indicates an expected call of FindLatestByIMEI.
+func (mr *MockCertificateRepositoryMockRecorder) FindLatestByIMEI(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindByNumber", reflect.TypeOf((*MockCertificateRepository)(nil).FindByNumber), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLatestByIMEI", reflect.TypeOf((*MockCertificateRepository)(nil).FindLatestByIMEI), arg0, arg1)
 }
 
-// FindByNumbers mocks base method.
-func (m *MockCertificateRepository) FindByNumbers(arg0 context.Context, arg1 []string) ([]entity.Certificate, error) {
+// FindLatestByIMEIs mocks base method.
+func (m *MockCertificateRepository) FindLatestByIMEIs(arg0 context.Context, arg1 []string) ([]entity.Certificate, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindByNumbers", arg0, arg1)
+	ret := m.ctrl.Call(m, "FindLatestByIMEIs", arg0, arg1)
 	ret0, _ := ret[0].([]entity.Certificate)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FindByNumbers indicates an expected call of FindByNumbers.
-func (mr *MockCertificateRepositoryMockRecorder) FindByNumbers(arg0, arg1 any) *gomock.Call {
+// FindLatestByIMEIs indicates an expected call of FindLatestByIMEIs.
+func (mr *MockCertificateRepositoryMockRecorder) FindLatestByIMEIs(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindByNumbers", reflect.TypeOf((*MockCertificateRepository)(nil).FindByNumbers), arg0, arg1)
-}
-
-// FindCurrentByIMEI mocks base method.
-func (m *MockCertificateRepository) FindCurrentByIMEI(arg0 context.Context, arg1 string) (*entity.Certificate, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindCurrentByIMEI", arg0, arg1)
-	ret0, _ := ret[0].(*entity.Certificate)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// FindCurrentByIMEI indicates an expected call of FindCurrentByIMEI.
-func (mr *MockCertificateRepositoryMockRecorder) FindCurrentByIMEI(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindCurrentByIMEI", reflect.TypeOf((*MockCertificateRepository)(nil).FindCurrentByIMEI), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLatestByIMEIs", reflect.TypeOf((*MockCertificateRepository)(nil).FindLatestByIMEIs), arg0, arg1)
 }
 
 // Records mocks base method.

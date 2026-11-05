@@ -55,3 +55,19 @@ func (u *DeviceUsecase) Revoke(ctx context.Context, principal entity.Principal, 
 	}
 	return u.repo.Revoke(ctx, principal, imei)
 }
+
+func (u *DeviceUsecase) State(ctx context.Context, input string) (*entity.DeviceState, error) {
+	imei, err := entity.NormalizeIMEI(input)
+	if err != nil {
+		return nil, err
+	}
+	return u.repo.FindState(ctx, imei)
+}
+
+func (u *DeviceUsecase) History(ctx context.Context, input string, limit, offset int) ([]entity.StatusRecord, int, error) {
+	imei, err := entity.NormalizeIMEI(input)
+	if err != nil {
+		return nil, 0, err
+	}
+	return u.repo.StatusHistory(ctx, imei, limit, offset)
+}

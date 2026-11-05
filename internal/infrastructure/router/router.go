@@ -38,8 +38,8 @@ func New(certificates *controller.CertificateController, health *controller.Heal
 	e.GET("/ready", health.Ready)
 	api := e.Group("/api", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(10)))
 	api.GET("/certificates", certificates.List)
-	api.GET("/certificates/:number", certificates.Get)
-	api.GET("/certificates/:number/records", certificates.Records)
+	api.GET("/certificates/:imei", certificates.Get)
+	api.GET("/certificates/:imei/records", certificates.Records)
 	e.GET("/certificates/:imei", certificates.CurrentByIMEI, middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(10)))
 	return e
 }
@@ -56,6 +56,9 @@ func apiPolicy(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authenticate echo.MiddlewareFunc) {
+	public := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(10)))
+	public.GET("/:imei", devices.State)
+	public.GET("/:imei/history", devices.History)
 	g := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
 	g.POST("", devices.Register)
 	g.POST("/key-challenges", devices.Challenge)
@@ -70,7 +73,7 @@ func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController, certificates *
 	g.POST("/refresh", auth.Refresh)
 	g.POST("/revoke", auth.Revoke)
 	g.GET("/session", auth.Session, authenticate)
-	e.POST("/api/certificates/:number/revoke", certificates.Revoke, middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
+	e.POST("/api/certificates/:imei/revoke", certificates.Revoke, middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
 }
 
 func writeError(c *echo.Context, err error) {
@@ -91,8 +94,6 @@ func writeError(c *echo.Context, err error) {
 		status, code, message = 401, "unauthorized", "valid device credentials required"
 	case errors.Is(err, entity.ErrCertificateState):
 		status, code, message = 409, "certificate_has_successor", "certificate has a successor"
-	case errors.Is(err, entity.ErrInvalidNumber):
-		status, code, message = 400, "invalid_number", "specify valid certificate numbers (1 to 50 ids for list)"
 	case errors.Is(err, entity.ErrInvalidDevice):
 		status, code, message = 400, "invalid_device", "valid IMEIs and a P-256 public key are required"
 	case errors.Is(err, entity.ErrDeviceInUse):

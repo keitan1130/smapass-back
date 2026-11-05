@@ -17,42 +17,38 @@ func NewCertificateUsecase(repo repository.CertificateRepository) *CertificateUs
 }
 
 func (u *CertificateUsecase) Get(ctx context.Context, input string) (*entity.Certificate, error) {
-	number, err := entity.NormalizeCertificateReference(input)
+	imei, err := entity.NormalizeIMEI(input)
 	if err != nil {
 		return nil, err
 	}
-	return u.repo.FindByNumber(ctx, number)
+	return u.repo.FindLatestByIMEI(ctx, imei)
 }
 
 func (u *CertificateUsecase) List(ctx context.Context, inputs []string) ([]entity.Certificate, error) {
 	if len(inputs) == 0 || len(inputs) > 50 {
-		return nil, fmt.Errorf("%w: specify 1 to 50 ids", entity.ErrInvalidNumber)
+		return nil, fmt.Errorf("%w: specify 1 to 50 IMEIs", entity.ErrInvalidDevice)
 	}
-	numbers := make([]string, 0, len(inputs))
+	imeis := make([]string, 0, len(inputs))
 	seen := make(map[string]bool)
 	for _, input := range inputs {
-		number, err := entity.NormalizeCertificateReference(input)
+		imei, err := entity.NormalizeIMEI(input)
 		if err != nil {
 			return nil, err
 		}
-		if !seen[number] {
-			numbers = append(numbers, number)
-			seen[number] = true
+		if !seen[imei] {
+			imeis = append(imeis, imei)
+			seen[imei] = true
 		}
 	}
-	return u.repo.FindByNumbers(ctx, numbers)
+	return u.repo.FindLatestByIMEIs(ctx, imeis)
 }
 
 func (u *CertificateUsecase) Records(ctx context.Context, input string, limit, offset int) ([]entity.VerificationRecord, int, error) {
-	number, err := entity.NormalizeCertificateReference(input)
+	imei, err := entity.NormalizeIMEI(input)
 	if err != nil {
 		return nil, 0, err
 	}
-	// Validate existence even when the selected page is empty.
-	if _, err = u.repo.FindByNumber(ctx, number); err != nil {
-		return nil, 0, err
-	}
-	return u.repo.Records(ctx, number, limit, offset)
+	return u.repo.Records(ctx, imei, limit, offset)
 }
 
 func (u *CertificateUsecase) CurrentByIMEI(ctx context.Context, input string) (*entity.Certificate, error) {
@@ -60,14 +56,14 @@ func (u *CertificateUsecase) CurrentByIMEI(ctx context.Context, input string) (*
 	if err != nil {
 		return nil, err
 	}
-	return u.repo.FindCurrentByIMEI(ctx, imei)
+	return u.repo.FindLatestByIMEI(ctx, imei)
 }
 
 func (u *CertificateUsecase) Revoke(ctx context.Context, p entity.Principal, input string) error {
 	if !validPrincipal(p) {
 		return entity.ErrUnauthenticated
 	}
-	ref, err := entity.NormalizeCertificateReference(input)
+	ref, err := entity.NormalizeIMEI(input)
 	if err != nil {
 		return err
 	}

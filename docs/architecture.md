@@ -30,7 +30,7 @@ internal/
   apidoc/                       公開型からの API スキーマ生成・整合テスト
   di/                           コンストラクタの組み立て
   domain/
-    entity/                     公開データ、証明書番号のルール
+    entity/                     公開データ、IMEIのルール
     repository/                 永続化のインターフェース
   usecase/                      証明書参照、DB readiness
   interface/

@@ -10,24 +10,36 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 | --- | --- | --- |
 | GET | `/health` | プロセス生存。`{"status":"ok"}` |
 | GET | `/ready` | DB に Ping。正常200、接続不可503 |
-| GET | `/certificates/{imei}` | 現在の登録者の最新の有効な証明書。未発行なら404 |
+| GET | `/api/devices/{imei}` | 認証不要の端末状態。登録終了中・所有者交代後・証明書未発行でも、既知のIMEIなら200 |
+| GET | `/api/devices/{imei}/history` | 認証不要の状態計測履歴。全登録期間を通じた連番順。limit / offsetでページング |
+| GET | `/certificates/{imei}` | IMEIに対応する最新の発行時スナップショット。登録終了・持ち主交代・証明書失効後も参照可。未発行なら404 |
 | POST | `/api/auth/challenges` | 初回登録用の5分間有効なチャレンジ。本文は imei、成功201 |
 | POST | `/api/devices/key-challenges` | 鍵交換用チャレンジ。本文は imeis、アクセストークン必須、成功201 |
 | POST | `/api/auth/devices` | IMEI・公開鍵・attestation・所有確認用署名を検証し、認証情報と鍵を登録。成功201、使用中409、再登録は15日ルール |
 | POST | `/api/auth/refresh` | 認証情報を更新。成功200、旧トークンを再利用するとそのアプリの認証情報を失効 |
 | POST | `/api/auth/revoke` | リフレッシュトークンで認証情報だけを失効。成功204 |
 | GET | `/api/auth/session` | 現在の認証対象 IMEI。アクセストークン必須 |
-| POST | `/api/certificates/{number}/revoke` | 現在の端末登録の証明書1件だけを失効。アクセストークン必須、成功204 |
+| POST | `/api/certificates/{imei}/revoke` | IMEIに対応する現在の登録期間の最新証明書を失効。アクセストークン必須、成功204 |
 | POST | `/api/devices` | 認証済み端末の公開鍵を、新しいチャレンジと attestation で交代。端末用アクセストークン必須 |
 | POST | `/api/devices/lookup` | IMEI による自分の端末の検索。端末用アクセストークン必須 |
-| POST | `/api/devices/{imei}/revoke` | 自分の登録・鍵・有効な証明書を手動失効。成功204、次の登録は即時可能。端末用アクセストークン必須 |
-| GET | `/api/certificates/{number}` | 証明書 UUID または短い番号で1件。不存在404 |
-| GET | `/api/certificates?ids=a,b,c` | `{"items":[...]}`。1〜50番号、重複除去、存在するものを番号昇順で返す |
-| GET | `/api/certificates/{number}/records` | 発行時に含めた検証用記録。連番昇順。ページングあり |
+| POST | `/api/devices/{imei}/revoke` | 自分の登録・認証情報・鍵を手動失効。端末状態・履歴は公開を継続。成功204、次の登録は即時可能。端末用アクセストークン必須 |
+| GET | `/api/certificates/{imei}` | IMEIに対応する最新の発行時スナップショット。失効済みも状態を明示して返す。未発行404 |
+| GET | `/api/certificates?imeis=a,b,c` | `{"items":[...]}`。1〜50 IMEI、重複・同一端末の副IMEIを統合、発行済みの最新スナップショットを主IMEI昇順で返す |
+| GET | `/api/certificates/{imei}/records` | 同じIMEIの全登録期間で発行スナップショットに含めた検証用記録の重複なし集合。連番昇順。ページングあり |
 
-一覧は番号を指定する方式で、全証明書の列挙 API は設けない。不明な番号は一覧結果から省略する。指定全件がなければ `items: []`。ids がない場合、空要素や形式不正の番号を含む場合は400。
+公開指定はIMEIのみ。証明書番号・証明書UUIDによる指定と過去の証明書単位の公開参照は廃止した。一括取得には `imeis` を指定する。全件列挙APIは設けない。指定は1〜50件で、空要素・形式不正・チェックディジット不正は400。発行済みスナップショットがない端末は一覧から省略し、全件該当なしは `items: []`。
 
-番号の保存・応答は `01ABCDEFGH` の形式。入力は `01ABC-DEFGH`、小文字、空白、O→0・I/L→1 を許容する。Web は表示時に5文字ずつ区切れる。番号生成は発行 API とともに実装予定。
+各端末の全登録期間から発行日時降順・同時刻なら内部UUID降順で最新の発行時スナップショットを選ぶ。失効済みでも `status` を明示して返し、古い別のスナップショットには戻らない。主IMEIと副IMEIは同じ端末へ解決する。登録終了後は旧出品者の `listing` を返さない。
+
+明示的な証明書失効は、現在の登録期間に属する最新の1件を対象にする。現在の登録期間に証明書がない場合は404、失効済みへの再送は204、後継へ置き換え済みなら409。端末登録・鍵・認証情報は維持する。公開レスポンスに `id`、`number`、`successor_number` は含めない。
+
+## 中古販売のための継続参照
+
+`GET /api/devices/{imei}` は登録の有効性にかかわらず、既知の端末の状態を返す。`registration_status` は `active` / `released`。`spec` と `status` は全登録期間を通じた最新の観測値、`record_count` と最初・最後の収集日時は端末の全ログを対象にする。未計測の値・未発行の `certificate` は null。発行済みの `certificate.snapshot` は発行時点の固定値であり、現在の観測値とは区別する。
+
+`GET /api/devices/{imei}/history` は状態計測の履歴を全登録期間にわたって返す。所有者の識別情報・認証情報・attestation は公開しない。これらの測定値が正しいことや署名検証済みであることを、このAPIは保証しない。
+
+売却時に登録を終了しても、計測履歴と発行時スナップショットは閲覧できる。次の持ち主には新しい登録期間・認証情報・鍵を発行し、同じ主IMEIへ結び付ける。認証済みの端末検索・鍵登録応答の `next_sequence` / `previous_hash` で続きの位置を確認できる。旧持ち主の認証情報と鍵は使えない。新規ログ取り込みAPI自体は未実装。
 
 ## 証明書詳細
 
@@ -35,11 +47,8 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 | 項目 | 意味 |
 | --- | --- |
-| `id` | 証明書の UUID。端末の管理 ID ではない |
 | `imei` | 端末の主 IMEI 全桁。公開 URL に使用 |
-| `number` | 互換性と手入力用の番号10文字 |
 | `status` | `valid` / `revoked` / `superseded`。証明書の有効状態で、暗号学的な検証結果ではない |
-| `successor_number` | 再発行済みの場合の後継番号。それ以外は null |
 | `issued_at` | 発行日時 |
 | `is_demo` | 架空データか。true の場合は実証明書として扱わない |
 | `snapshot.schema_version` | 公開スナップショットの形式。現在1 |
@@ -52,13 +61,13 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 | `snapshot.maintenance_records` | 事業者名・種別・日時・内容。登録機能は未実装、デモは空配列 |
 | `listing` | 出品先・商品 ID・IMEI 末尾4桁・登録日時。未登録なら null |
 
-`snapshot` は発行時点の値。`status`・後継・`listing` は現在値。取得不能な測定値は null。null を0や「異常なし」に置き換えない。日時は RFC 3339、単位はフィールド名に含める。配列に表示順の意味がある履歴は時刻 / 連番昇順で格納する。
+`snapshot` は発行時点の値。`status`・`listing` は現在値。取得不能な測定値は null。null を0や「異常なし」に置き換えない。日時は RFC 3339、単位はフィールド名に含める。配列に表示順の意味がある履歴は時刻 / 連番昇順で格納する。
 
 評価ロジックは未実装で、サンプルの A は表示確認用。記録欠測のしきい値も未決のためデモでは null。この状態で「記録は途切れていない」と判断しない。
 
 ## 検証用記録
 
-`limit` は既定100、1〜500。`offset` は既定0、0〜1,000,000。上限外・整数以外は400。存在しない証明書は、ページが空でも404。
+`limit` は既定100、1〜500。`offset` は既定0、0〜1,000,000。上限外・整数以外は400。未登録のIMEIは404。既知の端末に公開対象の記録がまだない場合は空配列・total: 0。
 
 [応答例](examples/records.json)：
 
@@ -72,7 +81,7 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 - `anchor_state` は `unanchored` / `pending` / `confirmed` / `failed`。これはサーバーの保存状態で、ブラウザでの一致を保証しない。
 - 未記録なら chain / transaction_hash / merkle_root / leaf_index は null、merkle_proof は空配列。`confirmed` と署名検証は別の事実。
 - proof の各要素は `{ "side": "left" または "right", "hash": "32 bytes の小文字 hex" }`。具体的な leaf / node ハッシュの方式は未確定。
-- ページをまたいで全件取得する。公開記録の集合は発行時に固定する設計。
+- ページをまたいで全件取得する。各発行時のログ集合を保持し、IMEIでの参照は全登録期間の公開済みログを重複なく返す。新しい記録の発行・公開によって増える。
 - デモは `canonicalization: demo-json-sort-v1`、`signature_algorithm: demo-not-a-signature`。JCS / 実署名として検証しない。
 
 ## エラーと共通 HTTP 処理
@@ -83,7 +92,7 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 | HTTP | code の例 | 意味 |
 | --- | --- | --- |
-| 400 | `invalid_number`, `bad_request` | 番号・ids・ページングの入力不正 |
+| 400 | `invalid_device`, `bad_request` | IMEI・imeis・ページングの入力不正 |
 | 404 | `not_found` | 証明書 / ルートが存在しない |
 | 405 | `method_not_allowed` | 未対応の HTTP メソッド |
 | 429 | `rate_limited` | レート制限 |
@@ -92,7 +101,7 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 API 全体に直接接続元 IP ごとのメモリ内レート制限（10リクエスト/秒相当・バースト10）を置く。ヘルスチェックは対象外。単一インスタンスの開発設定で、プロキシ配下では同じ IP に集約される。`X-Forwarded-For` は信用しない。共有ストアと信頼するプロキシの範囲は本番時に設計する。
 
-`CORS_ORIGINS` の明示 Origin に GET / POST / OPTIONS と Authorization ヘッダーを許可する。認証 Cookie は使わない。API は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow` を返す。公開番号は閲覧用の秘密情報として扱い、HTTP ログに URI / query は残さない。
+`CORS_ORIGINS` の明示 Origin に GET / POST / OPTIONS と Authorization ヘッダーを許可する。認証 Cookie は使わない。API は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow` を返す。IMEIは公開識別子として扱い、HTTP ログに URI / query は残さない。
 
 API 処理には5秒の context timeout、readiness には2秒を設定。ブラウザの検証は API 障害・RPC 障害を「照合できず」として扱い、不一致と混同しない。
 
@@ -102,7 +111,7 @@ API 処理には5秒の context timeout、readiness には2秒を設定。ブラ
 
 ## 端末登録と再登録
 
-認証、入力、15日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書 API のパス中の `number` と一括取得の `ids` は、証明書 UUID も受け付ける。
+認証、入力、15日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書APIのパスは `imei`、一括取得のクエリは `imeis` を使う。
 
 認証情報の有効期間、保存、再登録と失効の違いは [authentication.md](authentication.md) を参照。CORS は閲覧用 Web の接続制限であり、書き込み権限には使わない。
 

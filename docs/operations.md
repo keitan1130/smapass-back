@@ -10,7 +10,7 @@ curl -f http://localhost:8080/ready
 docker compose run --rm migrate version
 ```
 
-API は Request ID・メソッド・ステータスを記録する。DSN、アクセストークン、リフレッシュトークン、Authorization ヘッダー、秘密鍵、ペイロード、URL 内の証明書番号をログに出さない。DB の切断では readiness は503になる。サーバーを停止すると SIGTERM を受け、最大10秒で HTTP を終了して接続プールを閉じる。
+API は Request ID・メソッド・ステータスを記録する。DSN、アクセストークン、リフレッシュトークン、Authorization ヘッダー、秘密鍵、ペイロード、URL 内のIMEIをログに出さない。DB の切断では readiness は503になる。サーバーを停止すると SIGTERM を受け、最大10秒で HTTP を終了して接続プールを閉じる。
 
 ## 更新
 

@@ -80,9 +80,6 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 			if _, err := tx.ExecContext(ctx, "UPDATE device_keys SET revoked_at=? WHERE ownership_id=? AND revoked_at IS NULL", now, old.ID); err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE certificates SET status='revoked' WHERE ownership_id=? AND status='valid'", old.ID); err != nil {
-				return err
-			}
 		}
 		installation := uuid.NewString()
 		var ownership int64

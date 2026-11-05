@@ -16,15 +16,25 @@ def main():
         if get(path) != {"status": "ok"}:
             raise RuntimeError(f"Unexpected health response: {path}")
 
-    certificate = get("/api/certificates/01ABCDEFGH")
+    certificate = get("/api/certificates/000000000094821")
     if not certificate["is_demo"] or certificate["snapshot"]["recording"]["count"] != 28:
         raise RuntimeError("Unexpected development certificate; run make seed")
 
+    if any(field in certificate for field in ("id", "number", "successor_number", "successor_id")):
+        raise RuntimeError("Public certificate exposed an internal certificate identifier")
+
     current = get("/certificates/000000000094821")
-    if current["id"] != certificate["id"]:
+    if current != certificate:
         raise RuntimeError("IMEI public route returned a different certificate")
 
-    records = get("/api/certificates/01ABCDEFGH/records?limit=2")
+    state = get("/api/devices/000000000094821")
+    if state["record_count"] != 28 or state["status"]["sequence"] != 28:
+        raise RuntimeError("Unexpected public lifetime device state")
+    history = get("/api/devices/000000000094821/history?limit=2")
+    if history["total"] != 28 or len(history["items"]) != 2:
+        raise RuntimeError("Unexpected lifetime status history")
+
+    records = get("/api/certificates/000000000094821/records?limit=2")
     if records["total"] != 28 or len(records["items"]) != 2:
         raise RuntimeError("Unexpected evidence page")
 

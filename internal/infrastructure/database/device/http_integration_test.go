@@ -93,6 +93,8 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("490154203237518"), 201))
 	request(http.MethodPost, "/api/auth/devices", "", enrollment(a.IMEI), 409)
 	request(http.MethodGet, "/api/auth/session", a.AccessToken, nil, 200)
+	request(http.MethodGet, "/api/devices/"+a.IMEI, "", nil, 200)
+	request(http.MethodGet, "/api/devices/"+a.IMEI+"/history", "", nil, 200)
 	req := rotation(a.AccessToken, a.IMEI, "356938035643809")
 	request(http.MethodPost, "/api/devices", "", req, 401)
 	request(http.MethodPost, "/api/devices", a.IMEI, req, 401)
@@ -104,17 +106,32 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
 	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imeis": req.IMEIs, "public_key": req.PublicKey, "owner_subject": "forged"}, 400)
 	id := fixtureCertificate(t, db, &device)
+	body := request(http.MethodGet, "/api/certificates/356938035643809", "", nil, 200)
+	var public map[string]any
+	if err := json.Unmarshal(body, &public); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"id", "number", "successor_number", "successor_id"} {
+		if _, exists := public[field]; exists {
+			t.Fatalf("internal certificate identifier exposed: %s", field)
+		}
+	}
+	request(http.MethodGet, "/api/certificates/"+id, "", nil, 400)
+	request(http.MethodPost, "/api/certificates/02ABCDEFGH/revoke", a.AccessToken, nil, 400)
 	b := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("000000000094821"), 201))
 	request(http.MethodPost, "/api/devices/lookup", b.AccessToken, lookup, 404)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)
-	request(http.MethodPost, "/api/certificates/"+id+"/revoke", b.AccessToken, nil, 404)
-	request(http.MethodPost, "/api/certificates/"+id+"/revoke", "", nil, 401)
-	request(http.MethodPost, "/api/certificates/02ABCDEFGH/revoke", a.AccessToken, nil, 204)
-	request(http.MethodPost, "/api/certificates/"+id+"/revoke", a.AccessToken, nil, 204)
-	historical, err := certs.FindByNumber(ctx, id)
-	if err != nil || historical.Status != "revoked" {
+	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)
+	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", "", nil, 401)
+	request(http.MethodPost, "/api/certificates/356938035643809/revoke", a.AccessToken, nil, 204)
+	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", a.AccessToken, nil, 204)
+	var historicalStatus string
+	err := db.NewRaw("SELECT status FROM certificates WHERE id=?", id).Scan(ctx, &historicalStatus)
+	if err != nil || historicalStatus != "revoked" {
 		t.Fatalf("revocation missing: %v", err)
 	}
+	request(http.MethodGet, "/api/certificates/"+a.IMEI, "", nil, 200)
+	request(http.MethodGet, "/api/certificates/"+a.IMEI+"/records", "", nil, 200)
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
 	stale, err := authUsecase.Authenticate(ctx, a.AccessToken)
 	if err != nil {
@@ -128,6 +145,11 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 200)
 	request(http.MethodPost, "/api/devices/356938035643809/revoke", next.AccessToken, nil, 204)
 	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 401)
+	var released entity.DeviceState
+	if err := json.Unmarshal(request(http.MethodGet, "/api/devices/356938035643809", "", nil, 200), &released); err != nil || released.RegistrationStatus != "released" {
+		t.Fatalf("sale interrupted public state: %v", err)
+	}
+	request(http.MethodGet, "/api/devices/"+a.IMEI+"/history", "", nil, 200)
 	replacement := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment(a.IMEI), 201))
 	request(http.MethodPost, "/api/devices", replacement.AccessToken, rotation(replacement.AccessToken, a.IMEI), 200)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", next.AccessToken, nil, 401)

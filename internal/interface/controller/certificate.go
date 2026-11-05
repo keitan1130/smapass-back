@@ -19,7 +19,7 @@ func NewCertificateController(u *usecase.CertificateUsecase) *CertificateControl
 }
 
 func (c *CertificateController) Get(ctx *echo.Context) error {
-	result, err := c.usecase.Get(ctx.Request().Context(), ctx.Param("number"))
+	result, err := c.usecase.Get(ctx.Request().Context(), ctx.Param("imei"))
 	if err != nil {
 		return err
 	}
@@ -39,14 +39,14 @@ func (c *CertificateController) Revoke(ctx *echo.Context) error {
 	if !ok {
 		return entity.ErrUnauthenticated
 	}
-	if err := c.usecase.Revoke(ctx.Request().Context(), p, ctx.Param("number")); err != nil {
+	if err := c.usecase.Revoke(ctx.Request().Context(), p, ctx.Param("imei")); err != nil {
 		return err
 	}
 	return ctx.NoContent(http.StatusNoContent)
 }
 
 func (c *CertificateController) List(ctx *echo.Context) error {
-	result, err := c.usecase.List(ctx.Request().Context(), strings.Split(ctx.QueryParam("ids"), ","))
+	result, err := c.usecase.List(ctx.Request().Context(), strings.Split(ctx.QueryParam("imeis"), ","))
 	if err != nil {
 		return err
 	}
@@ -54,23 +54,31 @@ func (c *CertificateController) List(ctx *echo.Context) error {
 }
 
 func (c *CertificateController) Records(ctx *echo.Context) error {
+	limit, offset, err := pagination(ctx)
+	if err != nil {
+		return err
+	}
+	items, total, err := c.usecase.Records(ctx.Request().Context(), ctx.Param("imei"), limit, offset)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, schema.Records{Items: items, Total: total, Limit: limit, Offset: offset})
+}
+
+func pagination(ctx *echo.Context) (int, int, error) {
 	limit, offset := 100, 0
 	var err error
 	if value := ctx.QueryParam("limit"); value != "" {
 		limit, err = strconv.Atoi(value)
 		if err != nil || limit < 1 || limit > 500 {
-			return echo.NewHTTPError(http.StatusBadRequest, "limit must be 1 to 500")
+			return 0, 0, echo.NewHTTPError(http.StatusBadRequest, "limit must be 1 to 500")
 		}
 	}
 	if value := ctx.QueryParam("offset"); value != "" {
 		offset, err = strconv.Atoi(value)
 		if err != nil || offset < 0 || offset > 1000000 {
-			return echo.NewHTTPError(http.StatusBadRequest, "offset must be 0 to 1000000")
+			return 0, 0, echo.NewHTTPError(http.StatusBadRequest, "offset must be 0 to 1000000")
 		}
 	}
-	items, total, err := c.usecase.Records(ctx.Request().Context(), ctx.Param("number"), limit, offset)
-	if err != nil {
-		return err
-	}
-	return ctx.JSON(http.StatusOK, schema.Records{Items: items, Total: total, Limit: limit, Offset: offset})
+	return limit, offset, nil
 }
