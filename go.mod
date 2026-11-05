@@ -3,6 +3,7 @@ module smapass-back
 go 1.27.3
 
 require (
+	github.com/cyberphone/json-canonicalization v0.0.0-20261011152517-32a48195b9b2
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v5 v5.4.4

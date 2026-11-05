@@ -69,7 +69,7 @@ Content-Type: application/json
 - `app_installations` は IMEI と登録期間を持ち、利用者のアカウントは持たない。内部の UUID は認証情報の履歴用で、端末の管理・公開 URL は IMEI を使う。
 - 各リクエストで、トークンの期限・更新・失効と、登録期間が現在も有効かを DB で確認する。鍵、証明書、登録の書き込みは、端末をロックした同じトランザクション内でも認証情報と対象への権限を再確認する。
 - ロック順は端末 → アプリ登録 → トークン。更新・失効・登録者変更と書き込みが競合しても、権限確認と書き込みの間で他人の登録に変わらないようにする。
-- 今後のログ送信・証明書発行でも `authorization.RequireDevice` を、端末ロック後・保存前に同じトランザクションで呼ぶ。これらの業務 API 自体は未実装。
+- 計測ログ送信では使用済み。今後の証明書発行でも `authorization.RequireDevice` を、端末ロック後・保存前に同じトランザクションで呼ぶ。証明書発行API自体は未実装。計測ログは `/api/devices/{imei}/logs` で送信できる。
 
 認証情報の DB 更新は `000003_device_auth`、チャレンジと attestation は `000004_key_attestation`。以前の `AUTH_PUBLIC_KEY` / `AUTH_ISSUER` / `AUTH_AUDIENCE` は使用しない。既存の外部 JWT を受け入れたり、クライアント指定の所有者 ID を信頼したりする互換設定はない。
 

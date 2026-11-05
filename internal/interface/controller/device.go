@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -11,6 +12,34 @@ import (
 	"smapass-back/internal/interface/schema"
 	"smapass-back/internal/usecase"
 )
+
+func (c *DeviceController) Ingest(ctx *echo.Context) error {
+	principal, ok := auth.Principal(ctx.Request().Context())
+	if !ok {
+		return entity.ErrUnauthenticated
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(ctx.Response(), ctx.Request().Body, 128<<10))
+	if err != nil {
+		var oversized *http.MaxBytesError
+		if errors.As(err, &oversized) {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "measurement request exceeds 128 KiB")
+		}
+		return entity.ErrInvalidMeasurement
+	}
+	var input entity.SubmitMeasurement
+	if err := entity.DecodeMeasurementJSON(data, &input); err != nil {
+		return err
+	}
+	receipt, err := c.usecase.Ingest(ctx.Request().Context(), principal, ctx.Param("imei"), input)
+	if err != nil {
+		return err
+	}
+	status := http.StatusCreated
+	if receipt.Duplicate {
+		status = http.StatusOK
+	}
+	return ctx.JSON(status, receipt)
+}
 
 type DeviceController struct{ usecase *usecase.DeviceUsecase }
 

@@ -41,7 +41,7 @@ func TestPublicExamplesMatchOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ file, schema string }{
-		{"certificate.json", "Certificate"}, {"records.json", "Records"}, {"device-state.json", "DeviceState"},
+		{"certificate.json", "Certificate"}, {"records.json", "Records"}, {"device-state.json", "DeviceState"}, {"measurement-request.json", "SubmitMeasurement"},
 	} {
 		t.Run(test.file, func(t *testing.T) {
 			definition, err := compiler.Compile("https://smapass.test/openapi.json#/components/schemas/" + test.schema)

@@ -2,10 +2,26 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
 )
+
+func (u *DeviceUsecase) Ingest(ctx context.Context, principal entity.Principal, inputIMEI string, input entity.SubmitMeasurement) (*entity.MeasurementReceipt, error) {
+	if !validPrincipal(principal) {
+		return nil, entity.ErrUnauthenticated
+	}
+	imei, err := entity.NormalizeIMEI(inputIMEI)
+	if err != nil {
+		return nil, err
+	}
+	log, err := entity.PrepareMeasurement(input, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return u.repo.AppendMeasurement(ctx, principal, imei, log)
+}
 
 type DeviceUsecase struct {
 	repo repository.DeviceRepository

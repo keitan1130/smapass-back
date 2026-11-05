@@ -4,7 +4,7 @@
 
 利用者のアカウントやログインは使わず、端末は引き続き IMEI 全桁で管理する。初回はサーバーのチャレンジを取得し、Android Keystore で作った公開鍵・attestation 証明書チェーン・秘密鍵での署名を送る。検証に成功した場合だけ、端末の登録期間・公開鍵・アプリ用の認証情報を同じトランザクションで保存する。
 
-採用する鍵は ECDSA P-256 / SHA-256（`ES256`）。公開鍵は PEM SubjectPublicKeyInfo。今回の所有確認用署名は Android の `SHA256withECDSA` が返す ASN.1 DER を標準 Base64 にして `signature_der` に入れる。ログの署名対象・JCS・署名の転送形式は #3 の対象であり、このチャレンジ形式と混同しない。
+採用する鍵は ECDSA P-256 / SHA-256（`ES256`）。公開鍵は PEM SubjectPublicKeyInfo。今回の所有確認用署名は Android の `SHA256withECDSA` が返す ASN.1 DER を標準 Base64 にして `signature_der` に入れる。計測ログも同じ鍵のSHA256withECDSAとDER形式を使うが、署名対象は [計測ログ送信](measurement-ingestion.md) のJCS envelope。チャレンジの署名対象バイト列とは区別する。
 
 検証ポリシーは `android-hardware-v1` とし、次を必須にする。
 

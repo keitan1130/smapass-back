@@ -11,6 +11,7 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 | GET | `/health` | プロセス生存。`{"status":"ok"}` |
 | GET | `/ready` | DB に Ping。正常200、接続不可503 |
 | GET | `/api/devices/{imei}` | 認証不要の端末状態。登録終了中・所有者交代後・証明書未発行でも、既知のIMEIなら200 |
+| POST | `/api/devices/{imei}/logs` | 署名付きスペック・状態計測を1件送信。Bearer必須。新規201、同一再送200 |
 | GET | `/api/devices/{imei}/history` | 認証不要の状態計測履歴。全登録期間を通じた連番順。limit / offsetでページング |
 | GET | `/certificates/{imei}` | IMEIに対応する最新の発行時スナップショット。登録終了・持ち主交代・証明書失効後も参照可。未発行なら404 |
 | POST | `/api/auth/challenges` | 初回登録用の5分間有効なチャレンジ。本文は imei、成功201 |
@@ -39,7 +40,7 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 `GET /api/devices/{imei}/history` は状態計測の履歴を全登録期間にわたって返す。所有者の識別情報・認証情報・attestation は公開しない。これらの測定値が正しいことや署名検証済みであることを、このAPIは保証しない。
 
-売却時に登録を終了しても、計測履歴と発行時スナップショットは閲覧できる。次の持ち主には新しい登録期間・認証情報・鍵を発行し、同じ主IMEIへ結び付ける。認証済みの端末検索・鍵登録応答の `next_sequence` / `previous_hash` で続きの位置を確認できる。旧持ち主の認証情報と鍵は使えない。新規ログ取り込みAPI自体は未実装。
+売却時に登録を終了しても、計測履歴と発行時スナップショットは閲覧できる。次の持ち主には新しい登録期間・認証情報・鍵を発行し、同じ主IMEIへ結び付ける。認証済みの端末検索・鍵登録応答の `next_sequence` / `previous_hash` で続きの位置を確認できる。旧持ち主の認証情報と鍵は使えない。計測ログの送信は `POST /api/devices/{imei}/logs`。形式とAndroid実装例は [計測ログ送信](measurement-ingestion.md) を参照。
 
 ## 証明書詳細
 
@@ -92,7 +93,10 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 
 | HTTP | code の例 | 意味 |
 | --- | --- | --- |
-| 400 | `invalid_device`, `bad_request` | IMEI・imeis・ページングの入力不正 |
+| 400 | `invalid_device`, `invalid_measurement`, `bad_request` | IMEI・imeis・ページングの入力不正 |
+| 403 | `measurement_signature_rejected` | 計測署名不正・現在の検証済み鍵ではない |
+| 409 | `measurement_conflict` | 連番・前ハッシュ・同一連番の内容が競合 |
+| 413 | `http_error` | 計測送信本文が128 KiBを超過 |
 | 404 | `not_found` | 証明書 / ルートが存在しない |
 | 405 | `method_not_allowed` | 未対応の HTTP メソッド |
 | 429 | `rate_limited` | レート制限 |
@@ -107,7 +111,7 @@ API 処理には5秒の context timeout、readiness には2秒を設定。ブラ
 
 ## 未実装 API
 
-ログ登録、証明書発行・再発行、出品先の更新、事業者の整備記録登録は未実装。`/api/me/bookmarks` と画像生成 API は提供しない。Web 側でブラウザ保存・カード画像生成を担当する。
+証明書発行・再発行、出品先の更新、事業者の整備記録登録は未実装。`/api/me/bookmarks` と画像生成 API は提供しない。Web 側でブラウザ保存・カード画像生成を担当する。
 
 ## 端末登録と再登録
 
