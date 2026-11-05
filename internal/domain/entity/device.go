@@ -38,6 +38,8 @@ type Device struct {
 	ReclaimableAt     time.Time  `json:"reclaimable_at"`
 	KeyID             string     `json:"key_id"`
 	KeyAttested       bool       `json:"key_attested"`
+	NextSequence      int64      `json:"next_sequence"`
+	PreviousHash      *string    `json:"previous_hash"`
 	IMEIAttested      bool       `json:"imei_attested"`
 }
 
@@ -97,4 +99,18 @@ func (r *RegisterDevice) Normalize() error {
 	}
 	r.PublicKey = string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: encoded}))
 	return nil
+}
+
+// DeviceState is public lifetime state, independent of the current registrant.
+// Missing observations remain null; certificates retain their issued snapshots.
+type DeviceState struct {
+	IMEI               string        `json:"imei"`
+	IMEIs              []string      `json:"imeis"`
+	RegistrationStatus string        `json:"registration_status"`
+	RecordCount        int           `json:"record_count"`
+	FirstCollectedAt   *time.Time    `json:"first_collected_at"`
+	LastCollectedAt    *time.Time    `json:"last_collected_at"`
+	Spec               *DeviceSpec   `json:"spec"`
+	Status             *StatusRecord `json:"status"`
+	Certificate        *Certificate  `json:"certificate"`
 }

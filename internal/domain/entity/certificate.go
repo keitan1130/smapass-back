@@ -9,15 +9,13 @@ var ErrCertificateState = errors.New("certificate has a successor")
 
 // Certificate contains only data approved for the public API.
 type Certificate struct {
-	ID              string    `json:"id"`
-	IMEI            string    `json:"imei"`
-	Number          string    `json:"number"`
-	Status          string    `json:"status"`
-	SuccessorNumber *string   `json:"successor_number"`
-	IssuedAt        time.Time `json:"issued_at"`
-	IsDemo          bool      `json:"is_demo"`
-	Snapshot        Snapshot  `json:"snapshot"`
-	Listing         *Listing  `json:"listing"`
+	ID       string    `json:"-"`
+	IMEI     string    `json:"imei"`
+	Status   string    `json:"status"`
+	IssuedAt time.Time `json:"issued_at"`
+	IsDemo   bool      `json:"is_demo"`
+	Snapshot Snapshot  `json:"snapshot"`
+	Listing  *Listing  `json:"listing"`
 }
 
 type Snapshot struct {

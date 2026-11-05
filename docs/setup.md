@@ -27,10 +27,10 @@ curl -f http://localhost:8080/ready
 
 ```bash
 docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/seeds/development.sql
-curl -f http://localhost:8080/api/certificates/01ABC-DEFGH
+curl -f http://localhost:8080/api/certificates/000000000094821
 curl -f http://localhost:8080/certificates/000000000094821
-curl -f 'http://localhost:8080/api/certificates?ids=01ABCDEFGH'
-curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2&offset=0'
+curl -f 'http://localhost:8080/api/certificates?imeis=000000000094821'
+curl -f 'http://localhost:8080/api/certificates/000000000094821/records?limit=2&offset=0'
 ```
 
 デモ投入は登録者を変更する前なら繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
@@ -123,7 +123,7 @@ DB 統合テストは通常テストから分けている。Testcontainers が�
 | ポート競合 | `.env` の `API_PORT` / `DB_PORT` を変更。curl / ホストの DSN も合わせる |
 | migrate が失敗して API が起動しない | `docker compose logs migrate db` と `migrate version`。失敗を無視して API だけ起動しない |
 | DB 接続失敗 | `db` と `localhost` の使い分け、DSN と `POSTGRES_*`、既存ボリュームの初期設定 |
-| 証明書が404 | デモは自動投入しない。seed の実行と番号 `01ABC-DEFGH` を確認 |
+| 証明書が404 | デモは自動投入しない。seed の実行とIMEI `000000000094821` を確認 |
 | 429 | API は直接接続元 IP ごとに秒間10リクエスト相当。少し待って再試行 |
 | ブラウザだけ CORS エラー | Web の Origin が `CORS_ORIGINS` に含まれるか。Origin は scheme / host / port の完全一致 |
 

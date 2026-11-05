@@ -101,10 +101,6 @@
       },
       "Certificate": {
         "properties": {
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
           "imei": {
             "pattern": "^[0-9]{15}$",
             "type": "string"
@@ -126,13 +122,6 @@
               }
             ]
           },
-          "number": {
-            "examples": [
-              "01ABCDEFGH"
-            ],
-            "pattern": "^[0-9A-HJKMNP-TV-Z]{10}$",
-            "type": "string"
-          },
           "snapshot": {
             "$ref": "#/components/schemas/Snapshot"
           },
@@ -143,24 +132,11 @@
               "superseded"
             ],
             "type": "string"
-          },
-          "successor_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
-          "id",
           "imei",
-          "number",
           "status",
-          "successor_number",
           "issued_at",
           "is_demo",
           "snapshot",
@@ -215,9 +191,23 @@
               }
             ]
           },
+          "next_sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
           "ownership_id": {
             "format": "int64",
             "type": "integer"
+          },
+          "previous_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reclaimable_at": {
             "format": "date-time",
@@ -237,6 +227,8 @@
           "reclaimable_at",
           "key_id",
           "key_attested",
+          "next_sequence",
+          "previous_hash",
           "imei_attested"
         ],
         "type": "object"
@@ -363,6 +355,95 @@
           "os_version",
           "sdk_int",
           "collected_at"
+        ],
+        "type": "object"
+      },
+      "DeviceState": {
+        "properties": {
+          "certificate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Certificate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "first_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
+          },
+          "imeis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "last_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "record_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "registration_status": {
+            "enum": [
+              "active",
+              "released"
+            ],
+            "type": "string"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "imei",
+          "imeis",
+          "registration_status",
+          "record_count",
+          "first_collected_at",
+          "last_collected_at",
+          "spec",
+          "status",
+          "certificate"
         ],
         "type": "object"
       },
@@ -851,6 +932,35 @@
           "os_history",
           "status_history",
           "maintenance_records"
+        ],
+        "type": "object"
+      },
+      "StatusHistory": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StatusRecord"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "offset": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
         ],
         "type": "object"
       },
@@ -1489,13 +1599,14 @@
     },
     "/api/certificates": {
       "get": {
+        "description": "Public references use primary or secondary IMEI only. Lifetime device history remains readable after registration release, transfer, or certificate revocation. Certificate UUIDs and short numbers are not accepted or returned. No issued snapshot returns 404; GET /api/devices/{imei} remains available for a known device even without issuance. An old seller listing is omitted after registration release.",
         "operationId": "listCertificates",
         "parameters": [
           {
-            "description": "Certificate UUID or legacy 10-character certificate number; comma-separated for ids (up to 50).",
-            "example": "01ABC-DEFGH",
+            "description": "Comma-separated IMEIs (1 to 50); duplicates and aliases resolve to one latest issued snapshot per device, ordered by primary IMEI.",
+            "example": "000000000094821,490154203237518",
             "in": "query",
-            "name": "ids",
+            "name": "imeis",
             "required": true,
             "schema": {
               "type": "string"
@@ -1574,19 +1685,22 @@
             "description": "Unavailable"
           }
         },
-        "summary": "Read certificates by known public numbers"
+        "summary": "Read the latest issued snapshot by IMEI, including released registrations and revoked snapshots"
       }
     },
-    "/api/certificates/{number}": {
+    "/api/certificates/{imei}": {
       "get": {
+        "description": "Public references use primary or secondary IMEI only. Lifetime device history remains readable after registration release, transfer, or certificate revocation. Certificate UUIDs and short numbers are not accepted or returned. No issued snapshot returns 404; GET /api/devices/{imei} remains available for a known device even without issuance. An old seller listing is omitted after registration release.",
         "operationId": "getCertificate",
         "parameters": [
           {
-            "description": "Certificate UUID or legacy 10-character certificate number; comma-separated for ids (up to 50).",
+            "description": "15-digit IMEI with a valid check digit; primary and secondary IMEIs are accepted.",
+            "example": "000000000094821",
             "in": "path",
-            "name": "number",
+            "name": "imei",
             "required": true,
             "schema": {
+              "pattern": "^[0-9]{15}$",
               "type": "string"
             }
           }
@@ -1663,19 +1777,22 @@
             "description": "Unavailable"
           }
         },
-        "summary": "Read an issued public snapshot and current listing"
+        "summary": "Read the latest issued snapshot by IMEI, including released registrations and revoked snapshots"
       }
     },
-    "/api/certificates/{number}/records": {
+    "/api/certificates/{imei}/records": {
       "get": {
+        "description": "Public references use primary or secondary IMEI only. Lifetime device history remains readable after registration release, transfer, or certificate revocation. Certificate UUIDs and short numbers are not accepted or returned. Includes the deduplicated union of logs previously included in issued snapshots. Known devices without published evidence return an empty page.",
         "operationId": "getCertificateRecords",
         "parameters": [
           {
-            "description": "Certificate UUID or legacy 10-character certificate number; comma-separated for ids (up to 50).",
+            "description": "15-digit IMEI with a valid check digit; primary and secondary IMEIs are accepted.",
+            "example": "000000000094821",
             "in": "path",
-            "name": "number",
+            "name": "imei",
             "required": true,
             "schema": {
+              "pattern": "^[0-9]{15}$",
               "type": "string"
             }
           },
@@ -1772,19 +1889,22 @@
             "description": "Unavailable"
           }
         },
-        "summary": "Read frozen certificate evidence, ordered by sequence"
+        "summary": "Read cumulative published evidence across all registration periods by IMEI"
       }
     },
-    "/api/certificates/{number}/revoke": {
+    "/api/certificates/{imei}/revoke": {
       "post": {
+        "description": "Public references use primary or secondary IMEI only. Lifetime device history remains readable after registration release, transfer, or certificate revocation. Certificate UUIDs and short numbers are not accepted or returned. Revoke only the latest certificate belonging to the active registration. Access token required; historical state stays readable. Repeated revocation returns 204; no certificate in the current registration returns 404.",
         "operationId": "revokeOwnedCertificate",
         "parameters": [
           {
-            "description": "Certificate UUID or short certificate number",
+            "description": "15-digit IMEI with a valid check digit; primary and secondary IMEIs are accepted.",
+            "example": "000000000094821",
             "in": "path",
-            "name": "number",
+            "name": "imei",
             "required": true,
             "schema": {
+              "pattern": "^[0-9]{15}$",
               "type": "string"
             }
           }
@@ -1859,7 +1979,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Revoke one certificate in the current device registration; preserve evidence and device keys"
+        "summary": "Revoke the latest certificate of the current device registration by IMEI; preserve device keys and credentials"
       }
     },
     "/api/devices": {
@@ -2141,8 +2261,215 @@
         "summary": "Look up an owned device by IMEI"
       }
     },
+    "/api/devices/{imei}": {
+      "get": {
+        "description": "Returns 200 for any known IMEI including before certificate issuance, during sale with a released registration, after transfer, and after certificate revocation. Specs, latest measurements and counts span all registration periods. Missing observations and an unissued certificate are null. Measurements are observations, not proof of verification. Unknown devices return 404; owner identity, credentials and private attestation are never returned.",
+        "operationId": "getCertificate",
+        "parameters": [
+          {
+            "description": "15-digit IMEI with a valid check digit; primary and secondary IMEIs are accepted.",
+            "example": "000000000094821",
+            "in": "path",
+            "name": "imei",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{15}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceState"
+                }
+              }
+            },
+            "description": "Public certificate"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "security": [],
+        "summary": "Read public lifetime device state by IMEI, without authentication"
+      }
+    },
+    "/api/devices/{imei}/history": {
+      "get": {
+        "description": "Public status observations ordered by the IMEI-wide log sequence. Readable without authentication during release/transfer and after certificate revocation. Observations are not automatically verified; known devices without measurements return an empty page. Unknown IMEIs return 404.",
+        "operationId": "getCertificateRecords",
+        "parameters": [
+          {
+            "description": "15-digit IMEI with a valid check digit; primary and secondary IMEIs are accepted.",
+            "example": "000000000094821",
+            "in": "path",
+            "name": "imei",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{15}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusHistory"
+                }
+              }
+            },
+            "description": "Evidence page; these records do not imply verification success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "security": [],
+        "summary": "Read paginated lifetime measurements by IMEI, across all registrants"
+      }
+    },
     "/api/devices/{imei}/revoke": {
       "post": {
+        "description": "During sale or transfer, old credentials and keys lose writing authority while lifetime device state and history remain publicly readable by IMEI. The next holder can immediately register the same device and continue its sequence and previous hash.",
         "operationId": "revokeOwnedDevice",
         "parameters": [
           {
@@ -2215,14 +2542,17 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Revoke own current registration and release the device immediately"
+        "summary": "Release current device registration and revoke credentials and keys; preserve public lifetime state and issued snapshots"
       }
     },
     "/certificates/{imei}": {
       "get": {
+        "description": "Public references use primary or secondary IMEI only. Lifetime device history remains readable after registration release, transfer, or certificate revocation. Certificate UUIDs and short numbers are not accepted or returned. No issued snapshot returns 404; GET /api/devices/{imei} remains available for a known device even without issuance. An old seller listing is omitted after registration release.",
         "operationId": "getCurrentCertificateByIMEI",
         "parameters": [
           {
+            "description": "15-digit IMEI with a valid check digit; primary and secondary IMEIs are accepted.",
+            "example": "000000000094821",
             "in": "path",
             "name": "imei",
             "required": true,
@@ -2284,7 +2614,7 @@
             "description": "Service unavailable"
           }
         },
-        "summary": "Public current valid certificate for an IMEI or secondary IMEI"
+        "summary": "Read the latest issued snapshot by IMEI, including released registrations and revoked snapshots"
       }
     },
     "/health": {

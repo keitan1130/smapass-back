@@ -33,9 +33,9 @@ func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, 
 	_, err := db.ExecContext(ctx, `INSERT INTO device_logs (imei, ownership_id, key_id, seq, type,
 		canonicalization, canonical_payload, payload, payload_hash, prev_hash, signature, collected_at, received_at, signature_verified_at)
 		VALUES (?, ?, ?, ?, 'status', 'test', ?, ?::jsonb, sha256(convert_to(?, 'UTF8')),
-		CASE WHEN ? = 1 THEN NULL ELSE decode(repeat('ab',32), 'hex') END, decode('01','hex'), '2000-01-01', '2000-01-01', ?)`,
+		(SELECT payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), '2000-01-01', '2000-01-01', ?)`,
 		device.IMEI, device.OwnershipID, device.KeyID, seq, `{"seq":`+strconv.Itoa(seq)+`}`, `{"seq":`+strconv.Itoa(seq)+`}`,
-		`{"seq":`+strconv.Itoa(seq)+`}`, seq, marker)
+		`{"seq":`+strconv.Itoa(seq)+`}`, device.IMEI, marker)
 	return err
 }
 
@@ -166,19 +166,21 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	}
 }
 
-func TestPublicCertificateStopsFollowingPreviousOwner(t *testing.T) {
+func TestPublicHistoryContinuesAcrossOwners(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
 	certs := certificate.NewRepository(db)
-	before, err := certs.FindCurrentByIMEI(ctx, "000000000094821")
+	before, err := certs.FindLatestByIMEI(ctx, "000000000094821")
 	if err != nil {
 		t.Fatal(err)
 	}
 	credentials(t, db, before.IMEI)
-	if _, err = certs.FindCurrentByIMEI(ctx, before.IMEI); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("old certificate current: %v", err)
+	after, err := certs.FindLatestByIMEI(ctx, before.IMEI)
+	if err != nil || after.ID != before.ID || after.Listing != nil {
+		t.Fatalf("public history interrupted or old listing exposed: %v", err)
 	}
-	if old, err := certs.FindByNumber(ctx, before.ID); err != nil || old.Status != "revoked" {
+	var oldStatus string
+	if err := db.NewRaw("SELECT status FROM certificates WHERE id=?", before.ID).Scan(ctx, &oldStatus); err != nil || oldStatus != "valid" {
 		t.Fatalf("history lost: %v", err)
 	}
 }
@@ -187,7 +189,7 @@ func TestPublicCertificateStopsFollowingPreviousOwner(t *testing.T) {
 func fixtureCertificate(t *testing.T, db *bun.DB, device *entity.Device) string {
 	t.Helper()
 	var id string
-	err := db.NewRaw("INSERT INTO certificates (imei,ownership_id,number,issued_at,is_demo,snapshot) VALUES (?,?,'02ABCDEFGH',clock_timestamp(),true,'{}') RETURNING id", device.IMEI, device.OwnershipID).Scan(context.Background(), &id)
+	err := db.NewRaw("INSERT INTO certificates (imei,ownership_id,issued_at,is_demo,snapshot) VALUES (?,?,clock_timestamp(),true,'{}') RETURNING id", device.IMEI, device.OwnershipID).Scan(context.Background(), &id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +213,7 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	certs := certificate.NewRepository(db)
-	before, err := certs.FindByNumber(ctx, id)
+	before, err := certs.FindLatestByIMEI(ctx, a.IMEI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,11 +227,16 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("revoked installation authenticated: %v", err)
 	}
-	historical, err := certs.FindByNumber(ctx, id)
-	if err != nil || historical.Status != "revoked" || !historical.IssuedAt.Equal(before.IssuedAt) {
+	var historical struct {
+		Status   string
+		IssuedAt time.Time
+	}
+	err = db.NewRaw("SELECT status, issued_at FROM certificates WHERE id=?", id).Scan(ctx, &historical)
+	if err != nil || historical.Status != "valid" || !historical.IssuedAt.Equal(before.IssuedAt) {
 		t.Fatalf("history lost: %v", err)
 	}
-	_, count, err := certs.Records(ctx, id, 100, 0)
+	var count int
+	err = db.NewRaw("SELECT count(*) FROM certificate_logs WHERE certificate_id=?", id).Scan(ctx, &count)
 	if err != nil || count != 1 {
 		t.Fatalf("evidence lost: %d %v", count, err)
 	}

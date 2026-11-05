@@ -28,3 +28,10 @@ type Records struct {
 	Limit  int                         `json:"limit"`
 	Offset int                         `json:"offset"`
 }
+
+type StatusHistory struct {
+	Items  []entity.StatusRecord `json:"items"`
+	Total  int                   `json:"total"`
+	Limit  int                   `json:"limit"`
+	Offset int                   `json:"offset"`
+}

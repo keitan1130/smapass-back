@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
 
 	"github.com/uptrace/bun"
 	"smapass-back/internal/domain/entity"
@@ -22,37 +21,26 @@ func NewRepository(db *bun.DB) *Repository { return &Repository{db: db} }
 
 func (r *Repository) selectCertificates(model any) *bun.SelectQuery {
 	return r.db.NewSelect().Model(model).
-		Column("c.id", "c.imei", "c.number", "c.status", "c.successor_number", "c.issued_at", "c.is_demo", "c.snapshot").
-		ColumnExpr(`CASE WHEN l.certificate_id IS NULL THEN NULL ELSE jsonb_build_object(
+		Column("c.id", "c.imei", "c.status", "c.issued_at", "c.is_demo", "c.snapshot").
+		ColumnExpr(`CASE WHEN l.certificate_id IS NULL OR o.ended_at IS NOT NULL OR c.status <> 'valid' THEN NULL ELSE jsonb_build_object(
 			'marketplace', l.marketplace, 'item_id', l.item_id,
 			'imei_suffix', l.imei_suffix, 'registered_at', l.registered_at) END AS listing`).
+		Join("JOIN device_ownerships o ON o.id=c.ownership_id").
 		Join("LEFT JOIN certificate_listings AS l ON l.certificate_id = c.id")
 }
 
-func (r *Repository) FindByNumber(ctx context.Context, number string) (*entity.Certificate, error) {
-	var row dto.Certificate
-	err := r.selectCertificates(&row).Where(referenceColumn(number)+" = ?", number).Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, repository.ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	result := row.Entity()
-	return &result, nil
-}
+// Issued snapshots belong to the IMEI history. Registration expiry or
+// revocation changes writing authority, not public access to historical state.
+const latestCertificates = `SELECT DISTINCT ON (c.imei) c.id, c.imei
+    FROM certificates c ORDER BY c.imei, c.issued_at DESC, c.id DESC`
 
-func (r *Repository) FindByNumbers(ctx context.Context, numbers []string) ([]entity.Certificate, error) {
-	ids, short := []string{}, []string{}
-	for _, value := range numbers {
-		if referenceColumn(value) == "c.id" {
-			ids = append(ids, value)
-		} else {
-			short = append(short, value)
-		}
-	}
+func (r *Repository) FindLatestByIMEIs(ctx context.Context, imeis []string) ([]entity.Certificate, error) {
 	rows := make([]dto.Certificate, 0)
-	if err := r.selectCertificates(&rows).Where("(c.number IN (?) OR c.id IN (?))", bun.In(short), bun.In(ids)).OrderExpr("c.number ASC").Scan(ctx); err != nil {
+	err := r.selectCertificates(&rows).Where(`c.id IN (SELECT latest.id FROM (`+latestCertificates+`) latest
+        WHERE latest.imei IN
+        (SELECT primary_imei FROM device_imei_aliases WHERE imei IN (?)))`, bun.In(imeis)).
+		OrderExpr("c.imei ASC").Scan(ctx)
+	if err != nil {
 		return nil, err
 	}
 	result := make([]entity.Certificate, 0, len(rows))
@@ -62,10 +50,17 @@ func (r *Repository) FindByNumbers(ctx context.Context, numbers []string) ([]ent
 	return result, nil
 }
 
-func (r *Repository) Records(ctx context.Context, number string, limit, offset int) ([]entity.VerificationRecord, int, error) {
+func (r *Repository) Records(ctx context.Context, imei string, limit, offset int) ([]entity.VerificationRecord, int, error) {
+	var primary string
+	err := r.db.NewRaw("SELECT primary_imei FROM device_imei_aliases WHERE imei=?", imei).Scan(ctx, &primary)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, 0, repository.ErrNotFound
+	}
+	if err != nil {
+		return nil, 0, err
+	}
 	var total int
-	err := r.db.NewRaw(`SELECT count(*) FROM certificate_logs cl
-		JOIN certificates c ON c.id = cl.certificate_id WHERE `+referenceColumn(number)+` = ?`, number).Scan(ctx, &total)
+	err = r.db.NewRaw(`SELECT count(*) FROM device_logs l WHERE l.imei=? AND EXISTS (SELECT 1 FROM certificate_logs cl WHERE cl.log_id=l.id)`, primary).Scan(ctx, &total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -74,13 +69,11 @@ func (r *Repository) Records(ctx context.Context, number string, limit, offset i
 		k.public_key, k.signature_algorithm, l.canonicalization,
 		COALESCE(a.status, 'unanchored'), a.chain, a.tx_id, encode(a.merkle_root, 'hex'),
 		la.leaf_index, COALESCE(la.merkle_proof, '[]'::jsonb)
-		FROM certificate_logs cl
-		JOIN certificates c ON c.id = cl.certificate_id
-		JOIN device_logs l ON l.id = cl.log_id
+		FROM device_logs l
 		JOIN device_keys k ON k.id = l.key_id
 		LEFT JOIN log_anchors la ON la.log_id = l.id
 		LEFT JOIN anchors a ON a.id = la.anchor_id
-		WHERE `+referenceColumn(number)+` = ? ORDER BY l.seq ASC LIMIT ? OFFSET ?`, number, limit, offset)
+		WHERE l.imei = ? AND EXISTS (SELECT 1 FROM certificate_logs cl WHERE cl.log_id=l.id) ORDER BY l.seq ASC LIMIT ? OFFSET ?`, primary, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -104,61 +97,49 @@ func (r *Repository) Records(ctx context.Context, number string, limit, offset i
 	return result, total, rows.Err()
 }
 
-func referenceColumn(value string) string {
-	if len(value) == 36 {
-		if _, err := uuid.Parse(value); err == nil {
-			return "c.id"
-		}
-	}
-	return "c.number"
-}
-
-func (r *Repository) RevokeOwned(ctx context.Context, p entity.Principal, ref string) error {
+func (r *Repository) RevokeOwned(ctx context.Context, p entity.Principal, imei string) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var imei string
-		err := tx.NewRaw("SELECT c.imei FROM certificates c WHERE "+referenceColumn(ref)+"=?", ref).Scan(ctx, &imei)
+		var primary string
+		err := tx.NewRaw(`SELECT d.imei FROM devices d JOIN device_imei_aliases a ON a.primary_imei=d.imei
+            WHERE a.imei=? FOR UPDATE OF d`, imei).Scan(ctx, &primary)
 		if errors.Is(err, sql.ErrNoRows) {
 			return repository.ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei); err != nil {
+		if err := authorization.RequireDevice(ctx, tx, p, primary); err != nil {
 			return err
 		}
-		if err := authorization.RequireDevice(ctx, tx, p, imei); err != nil {
-			return err
+		var latest struct {
+			ID     string
+			Status string
 		}
-		var status string
-		err = tx.NewRaw(`SELECT c.status FROM certificates c JOIN device_ownerships o ON o.id=c.ownership_id
-			WHERE `+referenceColumn(ref)+`=? AND o.ended_at IS NULL AND o.owner_issuer=? AND o.owner_subject=? FOR UPDATE OF c`, ref, p.Issuer, p.Subject).Scan(ctx, &status)
+		err = tx.NewRaw(`SELECT c.id,c.status FROM certificates c
+            JOIN device_ownerships o ON o.id=c.ownership_id AND o.imei=c.imei
+            WHERE c.imei=? AND o.ended_at IS NULL AND o.owner_issuer=? AND o.owner_subject=?
+            ORDER BY c.issued_at DESC,c.id DESC LIMIT 1 FOR UPDATE OF c`, primary, p.Issuer, p.Subject).Scan(ctx, &latest)
 		if errors.Is(err, sql.ErrNoRows) {
 			return repository.ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		if status == "superseded" {
+		if latest.Status == "superseded" {
 			return entity.ErrCertificateState
 		}
-		_, err = tx.ExecContext(ctx, "UPDATE certificates c SET status='revoked' WHERE "+referenceColumn(ref)+"=? AND c.status='valid'", ref)
+		_, err = tx.ExecContext(ctx, "UPDATE certificates SET status='revoked' WHERE id=? AND status='valid'", latest.ID)
 		return err
 	})
 }
 
-func (r *Repository) FindCurrentByIMEI(ctx context.Context, imei string) (*entity.Certificate, error) {
-	var row dto.Certificate
-	err := r.selectCertificates(&row).
-		Join("JOIN device_imei_aliases AS a ON a.primary_imei = c.imei").
-		Join("JOIN device_ownerships AS o ON o.id = c.ownership_id AND o.ended_at IS NULL").
-		Where("a.imei = ? AND c.status = 'valid'", imei).
-		OrderExpr("c.issued_at DESC, c.id DESC").Limit(1).Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, repository.ErrNotFound
-	}
+func (r *Repository) FindLatestByIMEI(ctx context.Context, imei string) (*entity.Certificate, error) {
+	items, err := r.FindLatestByIMEIs(ctx, []string{imei})
 	if err != nil {
 		return nil, err
 	}
-	result := row.Entity()
-	return &result, nil
+	if len(items) == 0 {
+		return nil, repository.ErrNotFound
+	}
+	return &items[0], nil
 }

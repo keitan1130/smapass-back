@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/interface/auth"
+	"smapass-back/internal/interface/schema"
 	"smapass-back/internal/usecase"
 )
 
@@ -88,4 +89,24 @@ func (c *DeviceController) Revoke(ctx *echo.Context) error {
 		return err
 	}
 	return ctx.NoContent(http.StatusNoContent)
+}
+
+func (c *DeviceController) State(ctx *echo.Context) error {
+	result, err := c.usecase.State(ctx.Request().Context(), ctx.Param("imei"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, result)
+}
+
+func (c *DeviceController) History(ctx *echo.Context) error {
+	limit, offset, err := pagination(ctx)
+	if err != nil {
+		return err
+	}
+	items, total, err := c.usecase.History(ctx.Request().Context(), ctx.Param("imei"), limit, offset)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, schema.StatusHistory{Items: items, Total: total, Limit: limit, Offset: offset})
 }

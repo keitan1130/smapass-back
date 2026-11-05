@@ -22,8 +22,8 @@ curl -f http://localhost:8080/ready
 
 ```bash
 make seed
-curl -f http://localhost:8080/api/certificates/01ABC-DEFGH
-curl -f 'http://localhost:8080/api/certificates/01ABCDEFGH/records?limit=2'
+curl -f http://localhost:8080/api/certificates/000000000094821
+curl -f 'http://localhost:8080/api/certificates/000000000094821/records?limit=2'
 curl -f http://localhost:8080/certificates/000000000094821
 ```
 
@@ -79,13 +79,14 @@ GitHub Actions は push / PR 時に品質チェック、race 検出・カバレ�
 ## 実装済みの範囲
 
 - Go API・PostgreSQL・マイグレーションの Compose 起動、終了処理、DB 接続確認
-- 証明書詳細・番号指定の一括参照・検証用記録の参照 API
+- 公開の端末状態・状態履歴はIMEIで継続参照。登録終了中・持ち主交代後・証明書未発行でも取得可能
+- 証明書詳細・IMEI指定の一括参照・検証用記録の参照 API
 - 端末情報、評価の表示値と説明、記録期間、バッテリー推移、OS 更新履歴、記録一覧、出品先・IMEI 末尾、整備履歴の公開データ型
 - Android ハードウェア鍵の attestation・秘密鍵の保有確認、初回登録と鍵交換のチャレンジ
 - IMEI 主キーと複数 IMEI の照合、登録者履歴、15日間の非活動を条件とした再登録、鍵の交代
 - ログインなしの端末認証情報の発行・更新・失効、端末と証明書への書き込み権限の確認
-- 現在の登録者による手動失効（鍵・有効な証明書も失効、15日待たずに次の登録が可能）
-- `/certificates/{imei}` による現在の登録者の有効な証明書取得、証明書 UUID での過去データ参照
+- 現在の登録者による手動失効（認証情報・鍵を失効、履歴は維持、15日待たずに次の登録が可能）
+- `/certificates/{imei}` による全登録期間を通じた最新の発行時スナップショット取得。証明書の履歴は内部で保持
 - DB マイグレーション、発行時スナップショット、デモデータ、レート制限と CORS
 
 ログの取り込みと署名検証、評価算出、証明書の発行・再発行、出品先の更新、事業者の整備記録登録、JCS 正規化、チェーン送信・検証は未実装です。書き込みには端末用アクセストークンが必要です。登録にはアプリのパッケージ名と署名証明書 SHA-256 の設定、および対応する Android 実機の attestation が必要です。IMEI 自体の検証は設定と対応端末・権限に依存します。カード画像・QR・OGP の生成とブックマークは Web の担当です。
