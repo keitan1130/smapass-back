@@ -63,6 +63,9 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !first.ReclaimableAt.Equal(first.RegisteredAt.Add(72 * time.Hour)) {
+		t.Fatalf("advertised reclaim deadline: %s", first.ReclaimableAt)
+	}
 	again, err := u.Register(ctx, a, request)
 	if err != nil || again.OwnershipID != first.OwnershipID || !again.RegisteredAt.Equal(first.RegisteredAt) {
 		t.Fatalf("idempotency failed: %v", err)
@@ -84,7 +87,13 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1])); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("early reclaim: %v", err)
 	}
-	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '15 days' WHERE id=?", first.OwnershipID); err != nil {
+	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '71 hours' WHERE id=?", first.OwnershipID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1])); !errors.Is(err, entity.ErrDeviceInUse) {
+		t.Fatalf("reclaimed before 72 hours: %v", err)
+	}
+	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '3 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
 	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1]))
@@ -126,10 +135,14 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	if err = insertLog(ctx, db, first, 1, true); err != nil {
 		t.Fatal(err)
 	}
+	observed, err := u.Lookup(ctx, a, first.IMEI)
+	if err != nil || observed.LastVerifiedLogAt == nil || !observed.ReclaimableAt.Equal(observed.LastVerifiedLogAt.Add(72*time.Hour)) {
+		t.Fatalf("verified-log deadline: %+v %v", observed, err)
+	}
 	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, first.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("verified activity ignored: %v", err)
 	}
-	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET last_verified_log_at=now()-interval '15 days' WHERE id=?", first.OwnershipID); err != nil {
+	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET last_verified_log_at=now()-interval '3 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
 	if err = insertLog(ctx, db, first, 2, false); err != nil {

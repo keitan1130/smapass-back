@@ -104,7 +104,7 @@ func writeError(c *echo.Context, err error) {
 	case errors.Is(err, entity.ErrInvalidDevice):
 		status, code, message = 400, "invalid_device", "valid IMEIs and a P-256 public key are required"
 	case errors.Is(err, entity.ErrDeviceInUse):
-		status, code, message = 409, "device_in_use", "registration requires 15 days without verified logs"
+		status, code, message = 409, "device_in_use", "registration requires 3 days without verified logs"
 	case errors.Is(err, entity.ErrDeviceConflict):
 		status, code, message = 409, "device_conflict", "device identifiers or key conflict"
 	case errors.Is(err, repository.ErrNotFound):

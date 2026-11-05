@@ -45,7 +45,7 @@ func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Pri
 		err = tx.NewRaw(`SELECT canonical_payload,signature,ownership_id,key_id,received_at,signature_verified_at
 			FROM device_logs WHERE imei=? AND seq=?`, primary, log.Payload.Sequence).Scan(ctx, &existing)
 		if err == nil {
-			// Exact retries are read-only: do not renew the 15-day activity timer.
+			// Exact retries are read-only: do not renew the 3-day activity timer.
 			if existing.OwnershipID != ownership || existing.KeyID != log.Payload.KeyID || existing.SignatureVerifiedAt == nil ||
 				existing.CanonicalPayload != log.CanonicalPayload || !bytes.Equal(existing.Signature, log.Signature) {
 				return entity.ErrMeasurementConflict

@@ -166,7 +166,7 @@ func (r *Repository) Revoke(ctx context.Context, principal entity.Principal, ime
 func findOwned(ctx context.Context, db bun.IDB, principal entity.Principal, imei string) (*entity.Device, error) {
 	var result entity.Device
 	err := db.NewRaw(`SELECT d.imei, o.id AS ownership_id, o.started_at AS registered_at,
-		o.last_verified_log_at, COALESCE(o.last_verified_log_at, o.started_at) + interval '360 hours' AS reclaimable_at,
+		o.last_verified_log_at,
 		COALESCE(last_log.seq,0)+1 AS next_sequence, encode(last_log.payload_hash,'hex') AS previous_hash,
         k.id AS key_id,(k.attestation_verified_at IS NOT NULL) AS key_attested,k.imei_attested FROM device_imei_aliases a JOIN devices d ON d.imei = a.primary_imei
 		JOIN device_ownerships o ON o.imei = d.imei AND o.ended_at IS NULL
@@ -183,5 +183,6 @@ func findOwned(ctx context.Context, db bun.IDB, principal entity.Principal, imei
 	if err := db.NewRaw("SELECT imei FROM device_imei_aliases WHERE primary_imei = ? ORDER BY imei", result.IMEI).Scan(ctx, &result.IMEIs); err != nil {
 		return nil, err
 	}
+	result.ReclaimableAt = entity.DeviceReclaimableAt(result.RegisteredAt, result.LastVerifiedLogAt)
 	return &result, nil
 }

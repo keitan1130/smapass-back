@@ -146,8 +146,40 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	request("/api/devices/000000000094821/logs", tokens.AccessToken, []byte(`{}`), 400)
 	payload := entity.MeasurementPayload{SchemaVersion: 1, IMEI: device.IMEI, KeyID: device.KeyID, Sequence: 1, Type: "spec",
 		CollectedAt: time.Now().UTC().Truncate(time.Millisecond), Spec: &entity.SpecMeasurement{Manufacturer: "Google", Model: "Pixel 8"}}
+	// Three inactive days permit a transfer, but do not revoke the original
+	// installation. It can refresh expired access credentials and resume logging
+	// until another registrant actually takes over the device.
+	if _, err := db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '4 days' WHERE id=?", device.OwnershipID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE app_tokens SET created_at=clock_timestamp()-interval '4 days',
+		access_expires_at=clock_timestamp()-interval '3 days' WHERE id=?`, p.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	request(path, tokens.AccessToken, []byte(`{}`), 401)
+	resumedTokens, err := a.Refresh(ctx, entity.RefreshRequest{RefreshToken: tokens.RefreshToken})
+	if err != nil {
+		t.Fatalf("original installation could not refresh after inactivity: %v", err)
+	}
+	tokens = resumedTokens
+	p, err = a.Authenticate(ctx, tokens.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dormant, err := r.FindOwned(ctx, p, device.IMEI)
+	if err != nil || dormant.OwnershipID != device.OwnershipID || dormant.ReclaimableAt.After(time.Now()) {
+		t.Fatalf("original registration lost or refresh extended inactivity: %+v %v", dormant, err)
+	}
 	firstInput := signedMeasurement(t, key, payload)
 	first := send(firstInput, 201)
+	resumed, err := r.FindOwned(ctx, p, device.IMEI)
+	if err != nil || resumed.OwnershipID != device.OwnershipID || resumed.LastVerifiedLogAt == nil ||
+		!resumed.LastVerifiedLogAt.Equal(first.ReceivedAt) || !resumed.ReclaimableAt.Equal(first.ReceivedAt.Add(72*time.Hour)) {
+		t.Fatalf("resumed communication did not renew the original registration: %+v %v", resumed, err)
+	}
+	if _, err := a.Enroll(ctx, testutil.Enrollment(t, db, device.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
+		t.Fatalf("transfer allowed after the original installation resumed: %v", err)
+	}
 	before := activity()
 	if first.Duplicate || !first.SignatureVerified {
 		t.Fatal("new log receipt")

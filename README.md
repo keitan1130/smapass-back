@@ -84,9 +84,9 @@ GitHub Actions は push / PR 時に品質チェック、race 検出・カバレ�
 - 端末情報、評価の表示値と説明、記録期間、バッテリー推移、OS 更新履歴、記録一覧、出品先・IMEI 末尾、整備履歴の公開データ型
 - 計測ログの受信・JCSとECDSA署名検証・PostgreSQLへの元ログと表示用データの一括保存・同一送信の再試行
 - Android ハードウェア鍵の attestation・秘密鍵の保有確認、初回登録と鍵交換のチャレンジ
-- IMEI 主キーと複数 IMEI の照合、登録者履歴、15日間の非活動を条件とした再登録、鍵の交代
+- IMEI 主キーと複数 IMEI の照合、登録者履歴、3日間の非活動を条件とした再登録、鍵の交代
 - ログインなしの端末認証情報の発行・更新・失効、端末と証明書への書き込み権限の確認
-- 現在の登録者による手動失効（認証情報・鍵を失効、履歴は維持、15日待たずに次の登録が可能）
+- 現在の登録者による手動失効（認証情報・鍵を失効、履歴は維持、3日待たずに次の登録が可能）
 - `/certificates/{imei}` による全登録期間を通じた最新の発行時スナップショット取得。証明書の履歴は内部で保持
 - DB マイグレーション、発行時スナップショット、デモデータ、レート制限と CORS
 
@@ -103,7 +103,7 @@ GitHub Actions は push / PR 時に品質チェック、race 検出・カバレ�
 | [ログインなしのアプリ認証](docs/authentication.md) | IMEI からの認証情報発行、更新・失効、Android 接続、端末・証明書の権限 |
 | [計測ログ送信](docs/measurement-ingestion.md) | Androidからの署名付きスペック・状態送信、形式、再試行と連番 |
 | [Android 端末・鍵登録](docs/android-key-registration.md) | attestation の検証条件、アプリ設定、チャレンジ、鍵の保有確認・交代 |
-| [IMEI・登録者管理](docs/device-registration.md) | IMEI 登録、15日ルール、公開 URL、認証連携 |
+| [IMEI・登録者管理](docs/device-registration.md) | IMEI 登録、3日ルール、公開 URL、認証連携 |
 | [データベース](docs/database.md) | テーブル、仮 SQL からの変更、マイグレーション |
 | [API](docs/api.md) / [OpenAPI](docs/openapi.json) | 現在使える API、レスポンスとエラー |
 | [画面との対応](docs/screen-data.md) | 添付画面に必要な情報と各担当 |

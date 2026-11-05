@@ -16,7 +16,7 @@ OpenAPI は `make generate` で生成する。データ型は Go から生成し
 | GET | `/certificates/{imei}` | IMEIに対応する最新の発行時スナップショット。登録終了・持ち主交代・証明書失効後も参照可。未発行なら404 |
 | POST | `/api/auth/challenges` | 初回登録用の5分間有効なチャレンジ。本文は imei、成功201 |
 | POST | `/api/devices/key-challenges` | 鍵交換用チャレンジ。本文は imeis、アクセストークン必須、成功201 |
-| POST | `/api/auth/devices` | IMEI・公開鍵・attestation・所有確認用署名を検証し、認証情報と鍵を登録。成功201、使用中409、再登録は15日ルール |
+| POST | `/api/auth/devices` | IMEI・公開鍵・attestation・所有確認用署名を検証し、認証情報と鍵を登録。成功201、使用中409、再登録は3日ルール |
 | POST | `/api/auth/refresh` | 認証情報を更新。成功200、旧トークンを再利用するとそのアプリの認証情報を失効 |
 | POST | `/api/auth/revoke` | リフレッシュトークンで認証情報だけを失効。成功204 |
 | GET | `/api/auth/session` | 現在の認証対象 IMEI。アクセストークン必須 |
@@ -115,7 +115,7 @@ API 処理には5秒の context timeout、readiness には2秒を設定。ブラ
 
 ## 端末登録と再登録
 
-認証、入力、15日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書APIのパスは `imei`、一括取得のクエリは `imeis` を使う。
+認証、入力、3日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書APIのパスは `imei`、一括取得のクエリは `imeis` を使う。
 
 認証情報の有効期間、保存、再登録と失効の違いは [authentication.md](authentication.md) を参照。CORS は閲覧用 Web の接続制限であり、書き込み権限には使わない。
 
