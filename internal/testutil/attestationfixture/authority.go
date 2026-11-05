@@ -51,6 +51,8 @@ var defaultAuthority = sync.OnceValues(NewAuthority)
 func DefaultAuthority() (*Authority, error) { return defaultAuthority() }
 
 type Options struct {
+	// SigningKey permits integration tests to sign logs with the attested key.
+	SigningKey              *ecdsa.PrivateKey
 	PackageName             string
 	SigningDigest           []byte
 	Level                   int
@@ -151,9 +153,12 @@ func (a *Authority) Proof(challenge *entity.KeyChallenge, options Options) (stri
 	if options.RawExtension != nil {
 		extension = options.RawExtension
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return "", entity.KeyProof{}, err
+	key := options.SigningKey
+	if key == nil {
+		key, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return "", entity.KeyProof{}, err
+		}
 	}
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
 	if err != nil {

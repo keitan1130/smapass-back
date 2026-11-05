@@ -64,11 +64,7 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 			return err
 		}
 		if old.ID != 0 {
-			activity := old.StartedAt
-			if old.LastVerifiedLogAt != nil {
-				activity = *old.LastVerifiedLogAt
-			}
-			if now.Before(activity.Add(entity.DeviceReclaimAfter)) {
+			if now.Before(entity.DeviceReclaimableAt(old.StartedAt, old.LastVerifiedLogAt)) {
 				return entity.ErrDeviceInUse
 			}
 			if _, err := tx.ExecContext(ctx, "UPDATE device_ownerships SET ended_at=? WHERE id=?", now, old.ID); err != nil {

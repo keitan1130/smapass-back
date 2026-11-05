@@ -11,7 +11,14 @@ import (
 	"time"
 )
 
-const DeviceReclaimAfter = 15 * 24 * time.Hour
+const DeviceReclaimAfter = 3 * 24 * time.Hour
+
+func DeviceReclaimableAt(registeredAt time.Time, lastVerifiedLogAt *time.Time) time.Time {
+	if lastVerifiedLogAt != nil {
+		return lastVerifiedLogAt.Add(DeviceReclaimAfter)
+	}
+	return registeredAt.Add(DeviceReclaimAfter)
+}
 
 var (
 	ErrInvalidDevice  = errors.New("invalid device registration")

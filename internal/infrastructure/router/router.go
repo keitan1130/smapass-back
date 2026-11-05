@@ -64,6 +64,7 @@ func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authent
 	g.POST("/key-challenges", devices.Challenge)
 	g.POST("/lookup", devices.Lookup)
 	g.POST("/:imei/revoke", devices.Revoke)
+	g.POST("/:imei/logs", devices.Ingest)
 }
 
 func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController, certificates *controller.CertificateController, authenticate echo.MiddlewareFunc) {
@@ -84,6 +85,12 @@ func writeError(c *echo.Context, err error) {
 	var httpErr *echo.HTTPError
 	var statusCoder echo.HTTPStatusCoder
 	switch {
+	case errors.Is(err, entity.ErrInvalidMeasurement):
+		status, code, message = 400, "invalid_measurement", "invalid canonical measurement payload or signature encoding"
+	case errors.Is(err, entity.ErrMeasurementSignature):
+		status, code, message = 403, "measurement_signature_rejected", "measurement signature or current attested key rejected"
+	case errors.Is(err, entity.ErrMeasurementConflict):
+		status, code, message = 409, "measurement_conflict", "measurement sequence, previous hash or retry content conflict"
 	case errors.Is(err, entity.ErrAttestationUnavailable):
 		status, code, message = 503, "attestation_unavailable", "attestation verification is unavailable"
 	case errors.Is(err, entity.ErrAttestationRejected):
@@ -97,7 +104,7 @@ func writeError(c *echo.Context, err error) {
 	case errors.Is(err, entity.ErrInvalidDevice):
 		status, code, message = 400, "invalid_device", "valid IMEIs and a P-256 public key are required"
 	case errors.Is(err, entity.ErrDeviceInUse):
-		status, code, message = 409, "device_in_use", "registration requires 15 days without verified logs"
+		status, code, message = 409, "device_in_use", "registration requires 3 days without verified logs"
 	case errors.Is(err, entity.ErrDeviceConflict):
 		status, code, message = 409, "device_conflict", "device identifiers or key conflict"
 	case errors.Is(err, repository.ErrNotFound):

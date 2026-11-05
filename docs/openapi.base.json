@@ -1425,6 +1425,141 @@
         "description": "Public status observations ordered by the IMEI-wide log sequence. Readable without authentication during release/transfer and after certificate revocation. Observations are not automatically verified; known devices without measurements return an empty page. Unknown IMEIs return 404.",
         "security": []
       }
+    },
+    "/api/devices/{imei}/logs": {
+      "post": {
+        "operationId": "revokeOwnedDevice",
+        "summary": "Verify and atomically append one signed spec or status measurement by IMEI",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "imei",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{15}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Signature verified; raw signed bytes and projection stored atomically",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementReceipt"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Exact retry; original receipt returned, activity timestamp unchanged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, JCS, envelope, timestamp, measurement or Base64 encoding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked device credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid signature, inactive key or key without verified hardware attestation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown or unauthorized device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Sequence gap, previous hash mismatch, or conflicting retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 128 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal persistence failure; transaction rolled back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Bearer token required. The path accepts a primary or secondary IMEI; the signed envelope must use the primary IMEI and registered key UUID. canonical_payload must be the exact RFC 8785 JCS UTF-8 JSON string of MeasurementPayload, with all nullable fields included. Sign its UTF-8 bytes using SHA256withECDSA (P-256), encode the ASN.1 DER signature in standard Base64. Only the current attested key can append. All logs share an IMEI-wide sequence across key and holder changes. Exact retries from the current registration return the original receipt without extending registration activity. State and status history become readable immediately; this does not issue certificates, compute grades, verify physical measurement truth, or anchor to a chain. Body limit: 128 KiB; signed payload limit: 64 KiB.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitMeasurement"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "x-schema-overrides": {
@@ -1576,6 +1711,136 @@
           "active",
           "released"
         ]
+      }
+    },
+    "SubmitMeasurement": {
+      "canonical_payload": {
+        "maxLength": 65536,
+        "description": "Exact UTF-8 RFC 8785 JSON string for MeasurementPayload. The byte limit is also enforced server-side."
+      },
+      "signature_der": {
+        "maxLength": 96,
+        "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+        "description": "P-256 SHA256withECDSA ASN.1 DER signature, standard Base64."
+      }
+    },
+    "MeasurementPayload": {
+      "schema_version": {
+        "enum": [
+          1
+        ]
+      },
+      "imei": {
+        "pattern": "^[0-9]{15}$",
+        "description": "Primary IMEI; not an alias."
+      },
+      "key_id": {
+        "format": "uuid"
+      },
+      "sequence": {
+        "minimum": 1,
+        "maximum": 9007199254740990
+      },
+      "type": {
+        "enum": [
+          "spec",
+          "status"
+        ]
+      },
+      "collected_at": {
+        "description": "UTC RFC 3339, at most six fractional digits, no redundant trailing zeroes; from 1970 to server time +5 minutes. Offline past observations are accepted."
+      },
+      "previous_hash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "null for sequence 1; otherwise SHA-256 of the immediately preceding log canonical bytes, even across registrants."
+      },
+      "spec": {
+        "description": "Required object only for type=spec, otherwise null. Device names and arbitrary private fields are not accepted."
+      },
+      "status": {
+        "description": "Required object only for type=status, otherwise null. Every unknown observation must be null."
+      }
+    },
+    "SpecMeasurement": {
+      "manufacturer": {
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "model": {
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "soc": {
+        "maxLength": 128
+      },
+      "cpu_cores": {
+        "minimum": 1,
+        "maximum": 32767
+      },
+      "ram_bytes": {
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "storage_bytes": {
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "screen_size_inch": {
+        "minimum": 0.01,
+        "maximum": 99.99,
+        "multipleOf": 0.01
+      },
+      "screen_density_dpi": {
+        "minimum": 1,
+        "maximum": 32767
+      }
+    },
+    "StatusMeasurement": {
+      "os_version": {
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "sdk_int": {
+        "minimum": 1,
+        "maximum": 32767
+      },
+      "battery_temp_c": {
+        "minimum": -9999.9,
+        "maximum": 9999.9,
+        "multipleOf": 0.1
+      },
+      "battery_cycle_count": {
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "battery_charge_mah": {
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "battery_full_charge_mah": {
+        "minimum": 1,
+        "maximum": 2147483647
+      },
+      "boot_count": {
+        "minimum": 0,
+        "maximum": 2147483647
+      }
+    },
+    "MeasurementReceipt": {
+      "imei": {
+        "pattern": "^[0-9]{15}$"
+      },
+      "sequence": {
+        "minimum": 1
+      },
+      "payload_hash": {
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "signature_verified": {
+        "enum": [
+          true
+        ],
+        "description": "Signature verification succeeded; does not attest measurement truth or chain inclusion."
       }
     }
   },
