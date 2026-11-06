@@ -1,122 +1,85 @@
 # API 契約
 
-現在実装されている公開参照 API。ベース URL は開発時 `http://localhost:8080`。各 GET 応答は JSON。機械可読定義は [openapi.json](openapi.json)、Go 型は [entity/certificate.go](../internal/domain/entity/certificate.go) と [schema/response.go](../internal/interface/schema/response.go)。
+証明書は IMEI にひも付く最新の観測値と全登録期間の履歴。発行・再発行・証明書単位の失効は行わない。同じ URL は新しい計測の保存後に更新される。検索には15桁のIMEIを使い、主・副IMEIから同じ端末固有のランダムUUIDへ解決する。詳細・一括表示・検証ログはUUIDのみで取得する。UUIDは持ち主や鍵の交代で変わらない。
 
-OpenAPI は `make generate` で生成する。データ型は Go から生成し、URL・説明・制約は [openapi.base.json](openapi.base.json) で管理する。CI は生成物の更新漏れ、登録済み URL との一致、公開サンプルのスキーマ適合を検査する。生成結果を手で編集せず、元の定義を更新する。
+## 公開参照
 
-## エンドポイント
+すべて認証不要。既知の端末は登録終了中・持ち主交代後・未計測でも取得できる。
 
-| メソッド | パス | 応答 |
+| メソッド | パス | 用途 |
 | --- | --- | --- |
-| GET | `/health` | プロセス生存。`{"status":"ok"}` |
-| GET | `/ready` | DB に Ping。正常200、接続不可503 |
-| GET | `/api/devices/{imei}` | 認証不要の端末状態。登録終了中・所有者交代後・証明書未発行でも、既知のIMEIなら200 |
-| POST | `/api/devices/{imei}/logs` | 署名付きスペック・状態計測を1件送信。Bearer必須。新規201、同一再送200 |
-| GET | `/api/devices/{imei}/history` | 認証不要の状態計測履歴。全登録期間を通じた連番順。limit / offsetでページング |
-| GET | `/certificates/{imei}` | IMEIに対応する最新の発行時スナップショット。登録終了・持ち主交代・証明書失効後も参照可。未発行なら404 |
-| POST | `/api/auth/challenges` | 初回登録用の5分間有効なチャレンジ。本文は imei、成功201 |
-| POST | `/api/devices/key-challenges` | 鍵交換用チャレンジ。本文は imeis、アクセストークン必須、成功201 |
-| POST | `/api/auth/devices` | IMEI・公開鍵・attestation・所有確認用署名を検証し、認証情報と鍵を登録。成功201、使用中409、再登録は3日ルール |
-| POST | `/api/auth/refresh` | 認証情報を更新。成功200、旧トークンを再利用するとそのアプリの認証情報を失効 |
-| POST | `/api/auth/revoke` | リフレッシュトークンで認証情報だけを失効。成功204 |
-| GET | `/api/auth/session` | 現在の認証対象 IMEI。アクセストークン必須 |
-| POST | `/api/certificates/{imei}/revoke` | IMEIに対応する現在の登録期間の最新証明書を失効。アクセストークン必須、成功204 |
-| POST | `/api/devices` | 認証済み端末の公開鍵を、新しいチャレンジと attestation で交代。端末用アクセストークン必須 |
-| POST | `/api/devices/lookup` | IMEI による自分の端末の検索。端末用アクセストークン必須 |
-| POST | `/api/devices/{imei}/revoke` | 自分の登録・認証情報・鍵を手動失効。端末状態・履歴は公開を継続。成功204、次の登録は即時可能。端末用アクセストークン必須 |
-| GET | `/api/certificates/{imei}` | IMEIに対応する最新の発行時スナップショット。失効済みも状態を明示して返す。未発行404 |
-| GET | `/api/certificates?imeis=a,b,c` | `{"items":[...]}`。1〜50 IMEI、重複・同一端末の副IMEIを統合、発行済みの最新スナップショットを主IMEI昇順で返す |
-| GET | `/api/certificates/{imei}/records` | 同じIMEIの全登録期間で発行スナップショットに含めた検証用記録の重複なし集合。連番昇順。ページングあり |
+| GET | `/api/devices/search?imeis=a,b,c` | IMEIからUUIDへの検索。応答は `items: [{imei, id}]` の対応表のみ |
+| GET | `/api/devices/{id}?limit=100&offset=0` | 最新スペック・状態と、全期間の状態計測履歴 |
+| GET | `/api/devices?ids=a,b,c` | 一覧・比較用の最新概要を一括取得。履歴は含めない |
+| GET | `/api/devices/{id}/records?limit=100&offset=0` | 全期間の全ログの署名・ハッシュ・チェーン検証用データ |
+| GET | `/health` | プロセス生存 |
+| GET | `/ready` | DB 接続確認。正常200、接続不可503 |
 
-公開指定はIMEIのみ。証明書番号・証明書UUIDによる指定と過去の証明書単位の公開参照は廃止した。一括取得には `imeis` を指定する。全件列挙APIは設けない。指定は1〜50件で、空要素・形式不正・チェックディジット不正は400。発行済みスナップショットがない端末は一覧から省略し、全件該当なしは `items: []`。
+検索指定 `imeis` は1〜50件。空要素・形式不正・チェックディジット不正は400。同じIMEI入力は重複を除き、未知のIMEIは省略する。主・副IMEIは各対応表に同じUUIDを返す。該当なしは `items: []`。全件列挙は提供しない。
 
-各端末の全登録期間から発行日時降順・同時刻なら内部UUID降順で最新の発行時スナップショットを選ぶ。失効済みでも `status` を明示して返し、古い別のスナップショットには戻らない。主IMEIと副IMEIは同じ端末へ解決する。登録終了後は旧出品者の `listing` を返さない。
+表示一括指定 `ids` は1〜50 UUID。重複を除き、UUID昇順で概要を返す。未知のUUIDは省略する。不正/空のUUID、51件以上は400。UUIDのゼロ値は受け付けない。IMEIを詳細パスへ指定しても400。検索と一括表示の応答はそれぞれ異なる型で、IMEIを含むのは検索応答のみ。
 
-明示的な証明書失効は、現在の登録期間に属する最新の1件を対象にする。現在の登録期間に証明書がない場合は404、失効済みへの再送は204、後継へ置き換え済みなら409。端末登録・鍵・認証情報は維持する。公開レスポンスに `id`、`number`、`successor_number` は含めない。
+単体と検証ログのページングは `limit` 既定100・1〜500、`offset` 既定0・0〜1,000,000。不正値は400。全期間が対象だが、全件確認にはページを順に取得する。未知のUUIDは404。既知で未計測なら空配列。最新値と件数・ページは、各応答内で同じDBスナップショットから取得する。別々のリクエスト間は新規ログにより更新され得る。
 
-## 中古販売のための継続参照
+## 最新情報と履歴
 
-`GET /api/devices/{imei}` は登録の有効性にかかわらず、既知の端末の状態を返す。`registration_status` は `active` / `released`。`spec` と `status` は全登録期間を通じた最新の観測値、`record_count` と最初・最後の収集日時は端末の全ログを対象にする。未計測の値・未発行の `certificate` は null。発行済みの `certificate.snapshot` は発行時点の固定値であり、現在の観測値とは区別する。
-
-`GET /api/devices/{imei}/history` は状態計測の履歴を全登録期間にわたって返す。所有者の識別情報・認証情報・attestation は公開しない。これらの測定値が正しいことや署名検証済みであることを、このAPIは保証しない。
-
-売却時に登録を終了しても、計測履歴と発行時スナップショットは閲覧できる。次の持ち主には新しい登録期間・認証情報・鍵を発行し、同じ主IMEIへ結び付ける。認証済みの端末検索・鍵登録応答の `next_sequence` / `previous_hash` で続きの位置を確認できる。旧持ち主の認証情報と鍵は使えない。計測ログの送信は `POST /api/devices/{imei}/logs`。形式とAndroid実装例は [計測ログ送信](measurement-ingestion.md) を参照。
-
-## 証明書詳細
-
-[完全なデモ応答](examples/certificate.json) を参照。詳細と一括取得は同じ Certificate 型を返す。
+[応答例](examples/device-state.json)、型は `entity.DeviceState`。
 
 | 項目 | 意味 |
 | --- | --- |
-| `imei` | 端末の主 IMEI 全桁。公開 URL に使用 |
-| `status` | `valid` / `revoked` / `superseded`。証明書の有効状態で、暗号学的な検証結果ではない |
-| `issued_at` | 発行日時 |
-| `is_demo` | 架空データか。true の場合は実証明書として扱わない |
-| `snapshot.schema_version` | 公開スナップショットの形式。現在1 |
-| `snapshot.device` | メーカー・モデル・端末名・SoC・コア数・RAM / ストレージ bytes・画面インチ / dpi・OS / SDK・取得日時 |
-| `snapshot.grade` | 総合評価、ラベル、理由、算出方式のバージョン、項目別評価。`value` は未評価なら null |
-| `snapshot.recording` | 記録の開始・終了・件数、欠測判定のしきい値（秒）と空白期間。しきい値 null は未評価 |
-| `snapshot.battery` | 初期 / 最新の推定最大電荷 mAh、変化率 %、サイクル回数、時系列の電荷 / 温度 |
-| `snapshot.os_history` | OS / SDK の変更を観測した日時の一覧。実際に OS を更新した時刻とは限らない |
-| `snapshot.status_history` | 記録一覧。OS / SDK、温度、サイクル、残り電荷、推定最大電荷、起動回数、異常終了、熱的余裕 |
-| `snapshot.maintenance_records` | 事業者名・種別・日時・内容。登録機能は未実装、デモは空配列 |
-| `listing` | 出品先・商品 ID・IMEI 末尾4桁・登録日時。未登録なら null |
+| `id` | 端末に固定で割り当てたUUID。通常の表示応答はIMEIを含まない |
+| `registration_status` | `active` / `released`。書き込み登録の状態であり、履歴の有効性ではない |
+| `record_count` | 全ログの件数。スペックログも含む |
+| `first_collected_at`, `last_collected_at` | 全ログの最初・最後の計測日時。未計測はnull |
+| `spec` | 最新のスペック。OS/SDKは最新状態計測を反映。未取得はnull |
+| `status` | 最新の状態計測。未取得はnull |
+| `is_demo` | 全ログに `demo-json-sort-v1` の架空ログを含む場合true。falseでも検証成功を意味しない |
+| `history` | `items`, `total`, `limit`, `offset`。状態計測のみ、全登録期間の連番昇順 |
 
-`snapshot` は発行時点の値。`status`・`listing` は現在値。取得不能な測定値は null。null を0や「異常なし」に置き換えない。日時は RFC 3339、単位はフィールド名に含める。配列に表示順の意味がある履歴は時刻 / 連番昇順で格納する。
+`spec.collected_at` と `status.collected_at` は異なる場合がある。最終計測日時をWebに明示し、リアルタイムの実機状態と扱わない。未知の測定値はnullとし、0やfalseで補わない。日時はRFC 3339、単位はフィールド名で明示。
 
-評価ロジックは未実装で、サンプルの A は表示確認用。記録欠測のしきい値も未決のためデモでは null。この状態で「記録は途切れていない」と判断しない。
+`history.items` はOS/SDK、電池温度・サイクル・残り電荷・推定最大電荷、起動回数・異常終了・熱的余裕を返す。バッテリー推移やOS変更の観測一覧は、この履歴の必要ページを取得してWebで表示する。`record_count` と `history.total` はスペックログの有無によって異なる。
+
+一括応答の `DeviceSummary` は上記から `history` を除いたもの。現在のAPIは評価・欠測判定・整備記録・出品先を返さない。未実装の値を旧スナップショットやデモ評価で補わない。
+
+## UUIDで隠せる範囲
+
+UUIDはURL・QR・通常表示でIMEI全桁を出さないための識別子で、アクセス権ではない。検索も履歴も公開のまま。署名対象の元ログにはIMEI全桁が含まれるため、検証用APIではそのまま公開される。削除・マスクすると署名が一致しなくなる。検索・表示にはレート制限、no-store、noindexを適用する。
 
 ## 検証用記録
 
-`limit` は既定100、1〜500。`offset` は既定0、0〜1,000,000。上限外・整数以外は400。未登録のIMEIは404。既知の端末に公開対象の記録がまだない場合は空配列・total: 0。
+[応答例](examples/records.json)、型は `schema.Records`。証明書への収録条件はなく、全ログを連番昇順で返す。
 
-[応答例](examples/records.json)：
+各記録は連番・種別・計測日時、`canonical_payload`、SHA-256 hex、前ハッシュ、Base64署名、公開鍵・署名方式・正規化方式、アンカー状態・チェーン・トランザクション・Merkle情報を持つ。署名対象はJSON文字列をデコードしたUTF-8をそのまま使用し、JSONBやAPI応答を再シリアライズしない。
 
-```json
-{"items": [], "total": 0, "limit": 100, "offset": 0}
-```
+`unanchored` / `pending` / `confirmed` / `failed` は保存状態であり、ブラウザの検証結果ではない。未記録のチェーン情報はnull、proofは空配列。チェーン送信・外部RPC照合は未実装。デモの `demo-json-sort-v1` / `demo-not-a-signature` は実署名として検証しない。
 
-各記録には連番・種別・収集時刻、`canonical_payload`（署名対象の UTF-8 文字列）、SHA-256 hex、前ハッシュ、Base64 署名、公開鍵と方式、正規化方式、アンカー状態、チェーン・トランザクション・Merkle 情報を含む。
+## アプリ用の認証・書き込み
 
-- `canonical_payload` は JSON 文字列をデコードして得られる文字列の UTF-8 を、そのままハッシュする。API 応答全体や JSONB を再シリアライズしてハッシュしない。
-- `anchor_state` は `unanchored` / `pending` / `confirmed` / `failed`。これはサーバーの保存状態で、ブラウザでの一致を保証しない。
-- 未記録なら chain / transaction_hash / merkle_root / leaf_index は null、merkle_proof は空配列。`confirmed` と署名検証は別の事実。
-- proof の各要素は `{ "side": "left" または "right", "hash": "32 bytes の小文字 hex" }`。具体的な leaf / node ハッシュの方式は未確定。
-- ページをまたいで全件取得する。各発行時のログ集合を保持し、IMEIでの参照は全登録期間の公開済みログを重複なく返す。新しい記録の発行・公開によって増える。
-- デモは `canonicalization: demo-json-sort-v1`、`signature_algorithm: demo-not-a-signature`。JCS / 実署名として検証しない。
-
-## エラーと共通 HTTP 処理
-
-```json
-{"error":{"code":"not_found","message":"certificate not found"}}
-```
-
-| HTTP | code の例 | 意味 |
+| メソッド | パス | 役割 |
 | --- | --- | --- |
-| 400 | `invalid_device`, `invalid_measurement`, `bad_request` | IMEI・imeis・ページングの入力不正 |
-| 403 | `measurement_signature_rejected` | 計測署名不正・現在の検証済み鍵ではない |
-| 409 | `measurement_conflict` | 連番・前ハッシュ・同一連番の内容が競合 |
-| 413 | `http_error` | 計測送信本文が128 KiBを超過 |
-| 404 | `not_found` | 証明書 / ルートが存在しない |
-| 405 | `method_not_allowed` | 未対応の HTTP メソッド |
-| 429 | `rate_limited` | レート制限 |
-| 500 | `internal_error` | 予期しない内部障害 |
-| 503 | `unavailable` | DB 不通または処理タイムアウト |
+| POST | `/api/auth/challenges` | 初回登録用の期限付きチャレンジ |
+| POST | `/api/auth/devices` | attestation・鍵保有を検証し、端末登録と認証情報発行 |
+| POST | `/api/auth/refresh` | トークン更新。旧refreshの再利用を検知 |
+| POST | `/api/auth/revoke` | refreshトークンで認証情報のみ失効 |
+| POST | `/api/devices/key-challenges` | Bearer必須。鍵交換用チャレンジ |
+| POST | `/api/devices` | Bearer必須。attestation付きの鍵交換 |
+| POST | `/api/devices/lookup` | Bearer必須。自分の端末の連番・前ハッシュ・登録状態などを取得 |
+| POST | `/api/devices/{imei}/logs` | Bearer必須。署名付き計測を1件保存。新規201、同一再送200 |
+| POST | `/api/devices/{imei}/revoke` | Bearer必須。登録・鍵・認証を終了し、即時に次の登録を許可。履歴は残す |
 
-API 全体に直接接続元 IP ごとのメモリ内レート制限（10リクエスト/秒相当・バースト10）を置く。ヘルスチェックは対象外。単一インスタンスの開発設定で、プロキシ配下では同じ IP に集約される。`X-Forwarded-For` は信用しない。共有ストアと信頼するプロキシの範囲は本番時に設計する。
+公開検索と `lookup` は別用途。`lookup` の非公開の登録情報を公開APIへ移さない。認証IMEIは登録・更新のTokenPair応答に含まれるため `/api/auth/session` は廃止。
 
-`CORS_ORIGINS` の明示 Origin に GET / POST / OPTIONS と Authorization ヘッダーを許可する。認証 Cookie は使わない。API は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow` を返す。IMEIは公開識別子として扱い、HTTP ログに URI / query は残さない。
+## 廃止したAPI
 
-API 処理には5秒の context timeout、readiness には2秒を設定。ブラウザの検証は API 障害・RPC 障害を「照合できず」として扱い、不一致と混同しない。
+`/api/devices/{imei}/history` は端末単体の `history` に統合。旧 `/api/certificates` の一括取得はIMEI検索を経由した `/api/devices?ids=...`、検証ログは `/api/devices/{id}/records` に移した。旧 `/api/certificates/{imei}`、バックエンドの `/certificates/{imei}`、証明書単位のrevokeは削除し404を返す。
 
-## 未実装 API
+Webの `/certificates/{id}` はHTML・QRの遷移先として使用できる。バックエンドはこのHTMLルートを提供しない。WebはIMEI検索で得たUUIDで端末APIを呼ぶ。
 
-証明書発行・再発行、出品先の更新、事業者の整備記録登録は未実装。`/api/me/bookmarks` と画像生成 API は提供しない。Web 側でブラウザ保存・カード画像生成を担当する。
+## 共通処理
 
-## 端末登録と再登録
+機械可読定義は [openapi.json](openapi.json)。Go公開型と [openapi.base.json](openapi.base.json) から `make generate` で生成する。生成物を手で変更しない。
 
-認証、入力、3日ルール、公開入口の詳細は [device-registration.md](device-registration.md)。公開証明書APIのパスは `imei`、一括取得のクエリは `imeis` を使う。
+共通エラーは `{"error":{"code":"not_found","message":"resource not found"}}`。400は入力不正、401は認証不正、403は署名/attestation拒否、404は不存在/他端末、409は3日ルール/競合、413は本文上限、429はレート制限、503はタイムアウト/検証基盤・DBの利用不能。内部障害は500。
 
-認証情報の有効期間、保存、再登録と失効の違いは [authentication.md](authentication.md) を参照。CORS は閲覧用 Web の接続制限であり、書き込み権限には使わない。
-
-初回登録・鍵交換は `proof` が必須。証明書チェーンと所有確認用署名は非公開として扱う。[Android 鍵登録](android-key-registration.md) の条件・エラー・接続手順を参照。
+公開APIは直接接続元IP単位のメモリ内レート制限10/秒、書き込み5/秒、認証2/秒。単一インスタンスの開発設定。CORSは明示Originだけ許可し、認可には使用しない。応答は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow`。処理上限5秒、readinessは2秒。URI/query・IMEI・認証情報をアクセスログに残さない。

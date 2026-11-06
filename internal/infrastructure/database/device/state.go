@@ -12,9 +12,9 @@ import (
 	"smapass-back/internal/infrastructure/database/dto"
 )
 
-func publicPrimary(ctx context.Context, db bun.IDB, imei string) (string, error) {
+func primaryIMEIByID(ctx context.Context, db bun.IDB, id string) (string, error) {
 	var primary string
-	err := db.NewRaw("SELECT primary_imei FROM device_imei_aliases WHERE imei=?", imei).Scan(ctx, &primary)
+	err := db.NewRaw("SELECT imei FROM devices WHERE public_id=?", id).Scan(ctx, &primary)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", repository.ErrNotFound
 	}
@@ -23,80 +23,72 @@ func publicPrimary(ctx context.Context, db bun.IDB, imei string) (string, error)
 
 // State remains readable without credentials, including during a sale when no
 // registration is active. All observations are selected by the physical IMEI.
-func (r *Repository) FindState(ctx context.Context, imei string) (*entity.DeviceState, error) {
-	var state entity.DeviceState
+func (r *Repository) FindState(ctx context.Context, id string, limit, offset int) (*entity.DeviceState, error) {
+	var state *entity.DeviceState
 	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
-		primary, err := publicPrimary(ctx, tx, imei)
-		if err != nil {
-			return err
-		}
-		state.IMEI = primary
-		state.IMEIs = []string{}
-		if err := tx.NewRaw("SELECT imei FROM device_imei_aliases WHERE primary_imei=? ORDER BY imei", primary).Scan(ctx, &state.IMEIs); err != nil {
-			return err
-		}
-		if err := tx.NewRaw(`SELECT CASE WHEN EXISTS
+		var err error
+		state, err = readState(ctx, tx, id, limit, offset, true)
+		return err
+	})
+	return state, err
+}
+
+func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, includeHistory bool) (*entity.DeviceState, error) {
+	var state entity.DeviceState
+	primary, err := primaryIMEIByID(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	state.ID = id
+	if err := tx.NewRaw(`SELECT CASE WHEN EXISTS
 			(SELECT 1 FROM device_ownerships WHERE imei=? AND ended_at IS NULL)
 			THEN 'active' ELSE 'released' END`, primary).Scan(ctx, &state.RegistrationStatus); err != nil {
-			return err
-		}
-		var recording struct {
-			RecordCount      int
-			FirstCollectedAt *time.Time
-			LastCollectedAt  *time.Time
-		}
-		if err := tx.NewRaw(`SELECT count(*) AS record_count, min(collected_at) AS first_collected_at,
-			max(collected_at) AS last_collected_at FROM device_logs WHERE imei=?`, primary).Scan(ctx, &recording); err != nil {
-			return err
-		}
-		state.RecordCount = recording.RecordCount
-		state.FirstCollectedAt = recording.FirstCollectedAt
-		state.LastCollectedAt = recording.LastCollectedAt
-		var spec entity.DeviceSpec
-		err = tx.NewRaw(`SELECT s.manufacturer,s.model,s.device_name,s.soc,s.cpu_cores,s.ram_bytes,
+		return nil, err
+	}
+	var recording struct {
+		RecordCount      int
+		FirstCollectedAt *time.Time
+		LastCollectedAt  *time.Time
+		IsDemo           bool
+	}
+	if err := tx.NewRaw(`SELECT count(*) AS record_count, min(collected_at) AS first_collected_at,
+			max(collected_at) AS last_collected_at, COALESCE(bool_or(canonicalization = 'demo-json-sort-v1'), false) AS is_demo FROM device_logs WHERE imei=?`, primary).Scan(ctx, &recording); err != nil {
+		return nil, err
+	}
+	state.RecordCount = recording.RecordCount
+	state.IsDemo = recording.IsDemo
+	state.FirstCollectedAt = recording.FirstCollectedAt
+	state.LastCollectedAt = recording.LastCollectedAt
+	var spec entity.DeviceSpec
+	err = tx.NewRaw(`SELECT s.manufacturer,s.model,s.device_name,s.soc,s.cpu_cores,s.ram_bytes,
 			s.storage_bytes,s.screen_size_inch,s.screen_density_dpi,s.collected_at
 			FROM device_specs s JOIN device_logs l ON l.id=s.log_id
 			WHERE s.imei=? ORDER BY l.seq DESC LIMIT 1`, primary).Scan(ctx, &spec)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			state.Spec = &spec
-		}
-		var status dto.StatusRecord
-		err = statusQuery(tx, &status).Where("s.imei=?", primary).OrderExpr("l.seq DESC").Limit(1).Scan(ctx)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			value := status.Entity()
-			state.Status = &value
-			if state.Spec != nil {
-				state.Spec.OSVersion = &status.OSVersion
-				state.Spec.SDKInt = &status.SDKInt
-			}
-		}
-		var certificate dto.Certificate
-		err = tx.NewSelect().Model(&certificate).
-			Column("c.id", "c.imei", "c.status", "c.issued_at", "c.is_demo", "c.snapshot").
-			// A listing is registrant-provided, so do not carry an old seller's listing forward.
-			ColumnExpr(`CASE WHEN o.ended_at IS NULL AND c.status='valid' AND l.certificate_id IS NOT NULL
-				THEN jsonb_build_object('marketplace',l.marketplace,'item_id',l.item_id,
-				'imei_suffix',l.imei_suffix,'registered_at',l.registered_at) ELSE NULL END AS listing`).
-			Join("JOIN device_ownerships o ON o.id=c.ownership_id").
-			Join("LEFT JOIN certificate_listings l ON l.certificate_id=c.id").
-			Where("c.imei=?", primary).OrderExpr("c.issued_at DESC,c.id DESC").Limit(1).Scan(ctx)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			value := certificate.Entity()
-			state.Certificate = &value
-		}
-		return nil
-	})
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
+	}
+	if err == nil {
+		state.Spec = &spec
+	}
+	var status dto.StatusRecord
+	err = statusQuery(tx, &status).Where("s.imei=?", primary).OrderExpr("l.seq DESC").Limit(1).Scan(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil {
+		value := status.Entity()
+		state.Status = &value
+		if state.Spec != nil {
+			state.Spec.OSVersion = &status.OSVersion
+			state.Spec.SDKInt = &status.SDKInt
+		}
+	}
+	if includeHistory {
+		items, total, err := statusHistory(ctx, tx, primary, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		state.History = entity.DeviceHistory{Items: items, Total: total, Limit: limit, Offset: offset}
 	}
 	return &state, nil
 }
@@ -109,25 +101,45 @@ func statusQuery(db bun.IDB, model any) *bun.SelectQuery {
 		Join("JOIN device_logs l ON l.id=s.log_id")
 }
 
-func (r *Repository) StatusHistory(ctx context.Context, imei string, limit, offset int) ([]entity.StatusRecord, int, error) {
+func statusHistory(ctx context.Context, db bun.IDB, primary string, limit, offset int) ([]entity.StatusRecord, int, error) {
 	rows := make([]dto.StatusRecord, 0)
 	var total int
-	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
-		primary, err := publicPrimary(ctx, tx, imei)
-		if err != nil {
-			return err
-		}
-		if err := tx.NewRaw("SELECT count(*) FROM device_status WHERE imei=?", primary).Scan(ctx, &total); err != nil {
-			return err
-		}
-		return statusQuery(tx, &rows).Where("s.imei=?", primary).OrderExpr("l.seq ASC").Limit(int64(limit)).Offset(int64(offset)).Scan(ctx)
-	})
-	if err != nil {
+	if err := db.NewRaw("SELECT count(*) FROM device_status WHERE imei=?", primary).Scan(ctx, &total); err != nil {
+		return nil, 0, err
+	}
+	if err := statusQuery(db, &rows).Where("s.imei=?", primary).OrderExpr("l.seq ASC").Limit(int64(limit)).Offset(int64(offset)).Scan(ctx); err != nil {
 		return nil, 0, err
 	}
 	items := make([]entity.StatusRecord, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, row.Entity())
 	}
-	return items, total, err
+	return items, total, nil
+}
+
+// ListStates shares a database snapshot and omits history.
+func (r *Repository) ListStates(ctx context.Context, ids []string) ([]entity.DeviceSummary, error) {
+	items := make([]entity.DeviceSummary, 0)
+	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
+		var primaries []string
+		if err := tx.NewRaw("SELECT public_id FROM devices WHERE public_id IN (?) ORDER BY public_id", bun.In(ids)).Scan(ctx, &primaries); err != nil {
+			return err
+		}
+		for _, primary := range primaries {
+			state, err := readState(ctx, tx, primary, 0, 0, false)
+			if err != nil {
+				return err
+			}
+			items = append(items, entity.DeviceSummary{ID: state.ID, RegistrationStatus: state.RegistrationStatus, RecordCount: state.RecordCount, FirstCollectedAt: state.FirstCollectedAt, LastCollectedAt: state.LastCollectedAt, Spec: state.Spec, Status: state.Status, IsDemo: state.IsDemo})
+		}
+		return nil
+	})
+	return items, err
+}
+
+func (r *Repository) Search(ctx context.Context, imeis []string) ([]entity.DeviceReference, error) {
+	items := make([]entity.DeviceReference, 0)
+	err := r.db.NewRaw(`SELECT a.imei,d.public_id AS id FROM device_imei_aliases a
+ JOIN devices d ON d.imei=a.primary_imei WHERE a.imei IN (?) ORDER BY a.imei`, bun.In(imeis)).Scan(ctx, &items)
+	return items, err
 }

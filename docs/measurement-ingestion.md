@@ -1,6 +1,6 @@
 # Androidからの計測ログ送信
 
-`POST /api/devices/{imei}/logs` で端末スペックまたは状態計測を1件保存する。端末登録済みのアクセストークンと、その登録期間の有効なハードウェア鍵が必要。保存後は `GET /api/devices/{imei}` と `/history` から状態・計測履歴を取得できる。Androidアプリ・Web画面のコードは別リポジトリの担当。
+`POST /api/devices/{imei}/logs` で端末スペックまたは状態計測を1件保存する。端末登録済みのアクセストークンと、その登録期間の有効なハードウェア鍵が必要。保存後は `GET /api/devices/{id}` の `history` から状態・計測履歴を取得できる。Androidアプリ・Web画面のコードは別リポジトリの担当。
 
 ## 送信する手順
 
@@ -101,4 +101,4 @@ Content-Type: application/json
 
 [署名ベクタ](examples/measurement-vector.json) にはpayload・JCS正本・SHA-256・公開鍵・DER署名を含め、Goで検証する。[送信本文](examples/measurement-request.json) と [正規化ベクタ](examples/jcs-vectors.json) はAndroid・ブラウザ実装でも同じ結果になるか確認するための素材。署名ベクタの鍵はテスト専用で、本番の端末登録には使わない。サンプルのIMEI・鍵IDを送っても、その鍵が現在の登録鍵でなければ拒否される。
 
-このAPIはログの取り込み・署名検証・保存・状態参照への反映を担当する。評価算出・証明書発行・チェーン送信は行わない。公開の `/api/certificates/{imei}/records` は従来どおり発行スナップショットに含めたログの集合で、新しいログを自動で証明書へ追加しない。
+このAPIは署名検証・正本と投影の保存を担当する。保存後は最新証明書表示と `/api/devices/{id}/records` に自動で反映される。発行操作は不要。評価算出・チェーン送信は未実装。

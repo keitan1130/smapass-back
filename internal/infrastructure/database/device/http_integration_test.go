@@ -14,7 +14,6 @@ import (
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/infrastructure/auth"
 	authdb "smapass-back/internal/infrastructure/database/auth"
-	"smapass-back/internal/infrastructure/database/certificate"
 	"smapass-back/internal/infrastructure/database/testutil"
 	"smapass-back/internal/infrastructure/router"
 	"smapass-back/internal/interface/controller"
@@ -27,12 +26,10 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	ctx := context.Background()
 	authUsecase := usecase.NewAuthUsecase(authdb.NewRepository(db), testutil.Registration(t, db))
 	deviceUsecase := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
-	certs := certificate.NewRepository(db)
-	cc := controller.NewCertificateController(usecase.NewCertificateUsecase(certs))
-	app := router.New(cc, controller.NewHealthController(usecase.NewHealthUsecase(db)), []string{"http://localhost:3000"})
+	app := router.New(controller.NewHealthController(usecase.NewHealthUsecase(db)), []string{"http://localhost:3000"})
 	authenticate := auth.Middleware(authUsecase.Authenticate)
 	router.AddDeviceRoutes(app, controller.NewDeviceController(deviceUsecase), authenticate)
-	router.AddAuthRoutes(app, controller.NewAuthController(authUsecase), cc, authenticate)
+	router.AddAuthRoutes(app, controller.NewAuthController(authUsecase))
 	requestNumber := 0
 	request := func(method, path, bearer string, body any, status int) []byte {
 		t.Helper()
@@ -85,16 +82,16 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 		public, proof := testutil.Proof(t, &challenge)
 		return entity.RegisterDevice{IMEIs: imeis, PublicKey: public, Proof: proof}
 	}
-	request(http.MethodGet, "/certificates/000000000094821", "", nil, 200)
-	request(http.MethodGet, "/api/auth/session", "", nil, 401)
+	request(http.MethodGet, "/api/devices/"+publicID(t, db, "000000000094821"), "", nil, 200)
+	request(http.MethodPost, "/api/devices/lookup", "", map[string]string{"imei": "490154203237518"}, 401)
 	request(http.MethodPost, "/api/devices/key-challenges", "", entity.RotationChallengeRequest{IMEIs: []string{"490154203237518"}}, 401)
 	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "490154203237518"}, 400)
 	request(http.MethodPost, "/api/auth/devices", "", map[string]string{"imei": "bad"}, 400)
 	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("490154203237518"), 201))
 	request(http.MethodPost, "/api/auth/devices", "", enrollment(a.IMEI), 409)
-	request(http.MethodGet, "/api/auth/session", a.AccessToken, nil, 200)
-	request(http.MethodGet, "/api/devices/"+a.IMEI, "", nil, 200)
-	request(http.MethodGet, "/api/devices/"+a.IMEI+"/history", "", nil, 200)
+	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, map[string]string{"imei": "490154203237518"}, 200)
+	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI), "", nil, 200)
+	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI)+"?limit=2", "", nil, 200)
 	req := rotation(a.AccessToken, a.IMEI, "356938035643809")
 	request(http.MethodPost, "/api/devices", "", req, 401)
 	request(http.MethodPost, "/api/devices", a.IMEI, req, 401)
@@ -105,56 +102,46 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	lookup := map[string]string{"imei": a.IMEI}
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
 	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imeis": req.IMEIs, "public_key": req.PublicKey, "owner_subject": "forged"}, 400)
-	id := fixtureCertificate(t, db, &device)
-	body := request(http.MethodGet, "/api/certificates/356938035643809", "", nil, 200)
+	body := request(http.MethodGet, "/api/devices/"+publicID(t, db, "356938035643809"), "", nil, 200)
 	var public map[string]any
 	if err := json.Unmarshal(body, &public); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"id", "number", "successor_number", "successor_id"} {
+	for _, field := range []string{"imei", "imeis", "certificate", "snapshot", "ownership_id", "key_id", "owner_subject"} {
 		if _, exists := public[field]; exists {
-			t.Fatalf("internal certificate identifier exposed: %s", field)
+			t.Fatalf("private or stale field exposed: %s", field)
 		}
 	}
-	request(http.MethodGet, "/api/certificates/"+id, "", nil, 400)
-	request(http.MethodPost, "/api/certificates/02ABCDEFGH/revoke", a.AccessToken, nil, 400)
+	request(http.MethodGet, "/api/devices?ids="+publicID(t, db, a.IMEI), "", nil, 200)
+	request(http.MethodGet, "/api/certificates/"+a.IMEI, "", nil, 404)
+	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", a.AccessToken, nil, 404)
 	b := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("000000000094821"), 201))
 	request(http.MethodPost, "/api/devices/lookup", b.AccessToken, lookup, 404)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)
-	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)
-	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", "", nil, 401)
-	request(http.MethodPost, "/api/certificates/356938035643809/revoke", a.AccessToken, nil, 204)
-	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", a.AccessToken, nil, 204)
-	var historicalStatus string
-	err := db.NewRaw("SELECT status FROM certificates WHERE id=?", id).Scan(ctx, &historicalStatus)
-	if err != nil || historicalStatus != "revoked" {
-		t.Fatalf("revocation missing: %v", err)
-	}
-	request(http.MethodGet, "/api/certificates/"+a.IMEI, "", nil, 200)
-	request(http.MethodGet, "/api/certificates/"+a.IMEI+"/records", "", nil, 200)
+	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI)+"/records", "", nil, 200)
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
 	stale, err := authUsecase.Authenticate(ctx, a.AccessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
 	next := decodePair(request(http.MethodPost, "/api/auth/refresh", "", entity.RefreshRequest{RefreshToken: a.RefreshToken}, 200))
-	request(http.MethodGet, "/api/auth/session", a.AccessToken, nil, 401)
+	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, map[string]string{"imei": "490154203237518"}, 401)
 	if _, err = deviceUsecase.Register(ctx, stale, req); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("transaction accepted stale session: %v", err)
 	}
-	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 200)
+	request(http.MethodPost, "/api/devices/lookup", next.AccessToken, map[string]string{"imei": "490154203237518"}, 200)
 	request(http.MethodPost, "/api/devices/356938035643809/revoke", next.AccessToken, nil, 204)
-	request(http.MethodGet, "/api/auth/session", next.AccessToken, nil, 401)
+	request(http.MethodPost, "/api/devices/lookup", next.AccessToken, map[string]string{"imei": "490154203237518"}, 401)
 	var released entity.DeviceState
-	if err := json.Unmarshal(request(http.MethodGet, "/api/devices/356938035643809", "", nil, 200), &released); err != nil || released.RegistrationStatus != "released" {
+	if err := json.Unmarshal(request(http.MethodGet, "/api/devices/"+publicID(t, db, "356938035643809"), "", nil, 200), &released); err != nil || released.RegistrationStatus != "released" {
 		t.Fatalf("sale interrupted public state: %v", err)
 	}
-	request(http.MethodGet, "/api/devices/"+a.IMEI+"/history", "", nil, 200)
+	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI)+"?limit=2", "", nil, 200)
 	replacement := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment(a.IMEI), 201))
 	request(http.MethodPost, "/api/devices", replacement.AccessToken, rotation(replacement.AccessToken, a.IMEI), 200)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", next.AccessToken, nil, 401)
 	request(http.MethodPost, "/api/auth/revoke", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 204)
-	request(http.MethodGet, "/api/auth/session", b.AccessToken, nil, 401)
+	request(http.MethodPost, "/api/devices/lookup", b.AccessToken, map[string]string{"imei": b.IMEI}, 401)
 	request(http.MethodPost, "/api/auth/refresh", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 401)
 	request(http.MethodPost, "/api/auth/revoke", "", entity.RefreshRequest{RefreshToken: b.RefreshToken}, 204)
 	request(http.MethodPost, "/api/auth/devices", "", enrollment(b.IMEI), 409)

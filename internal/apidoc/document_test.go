@@ -9,12 +9,9 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"go.uber.org/mock/gomock"
 	"smapass-back/internal/apidoc"
-	"smapass-back/internal/domain/repository/mock"
 	"smapass-back/internal/infrastructure/router"
 	"smapass-back/internal/interface/controller"
-	"smapass-back/internal/usecase"
 )
 
 func generatedDocument(t *testing.T) map[string]any {
@@ -41,7 +38,7 @@ func TestPublicExamplesMatchOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ file, schema string }{
-		{"certificate.json", "Certificate"}, {"records.json", "Records"}, {"device-state.json", "DeviceState"}, {"measurement-request.json", "SubmitMeasurement"},
+		{"records.json", "Records"}, {"device-state.json", "DeviceState"}, {"measurement-request.json", "SubmitMeasurement"},
 	} {
 		t.Run(test.file, func(t *testing.T) {
 			definition, err := compiler.Compile("https://smapass.test/openapi.json#/components/schemas/" + test.schema)
@@ -59,22 +56,16 @@ func TestPublicExamplesMatchOpenAPI(t *testing.T) {
 			if err = definition.Validate(example); err != nil {
 				t.Fatal(err)
 			}
-			if test.schema == "Certificate" {
-				example.(map[string]any)["listing"].(map[string]any)["imei_suffix"] = "123456789012345"
-				if err = definition.Validate(example); err == nil {
-					t.Fatal("public schema accepted a full IMEI")
-				}
-			}
+
 		})
 	}
 }
 
 func TestDocumentedRoutesMatchRouter(t *testing.T) {
 	paths := generatedDocument(t)["paths"].(map[string]any)
-	repo := mock.NewMockCertificateRepository(gomock.NewController(t))
-	app := router.New(controller.NewCertificateController(usecase.NewCertificateUsecase(repo)), controller.NewHealthController(nil), nil)
+	app := router.New(controller.NewHealthController(nil), nil)
 	router.AddDeviceRoutes(app, controller.NewDeviceController(nil), func(next echo.HandlerFunc) echo.HandlerFunc { return next })
-	router.AddAuthRoutes(app, controller.NewAuthController(nil), controller.NewCertificateController(nil), func(next echo.HandlerFunc) echo.HandlerFunc { return next })
+	router.AddAuthRoutes(app, controller.NewAuthController(nil))
 	actual := map[string]bool{}
 	for _, route := range app.Router().Routes() {
 		// Echo also registers internal group fallback routes; only concrete routes are API operations.

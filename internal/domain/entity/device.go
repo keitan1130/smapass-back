@@ -109,15 +109,41 @@ func (r *RegisterDevice) Normalize() error {
 }
 
 // DeviceState is public lifetime state, independent of the current registrant.
-// Missing observations remain null; certificates retain their issued snapshots.
+// Missing observations remain null; history spans every registration period.
 type DeviceState struct {
-	IMEI               string        `json:"imei"`
-	IMEIs              []string      `json:"imeis"`
+	ID                 string        `json:"id"`
 	RegistrationStatus string        `json:"registration_status"`
 	RecordCount        int           `json:"record_count"`
 	FirstCollectedAt   *time.Time    `json:"first_collected_at"`
 	LastCollectedAt    *time.Time    `json:"last_collected_at"`
 	Spec               *DeviceSpec   `json:"spec"`
 	Status             *StatusRecord `json:"status"`
-	Certificate        *Certificate  `json:"certificate"`
+	IsDemo             bool          `json:"is_demo"`
+	History            DeviceHistory `json:"history"`
+}
+
+// DeviceHistory is the paginated lifetime measurement history.
+type DeviceHistory struct {
+	Items  []StatusRecord `json:"items"`
+	Total  int            `json:"total"`
+	Limit  int            `json:"limit"`
+	Offset int            `json:"offset"`
+}
+
+// DeviceSummary omits history for bookmark lists and comparisons.
+type DeviceSummary struct {
+	ID                 string        `json:"id"`
+	RegistrationStatus string        `json:"registration_status"`
+	RecordCount        int           `json:"record_count"`
+	FirstCollectedAt   *time.Time    `json:"first_collected_at"`
+	LastCollectedAt    *time.Time    `json:"last_collected_at"`
+	Spec               *DeviceSpec   `json:"spec"`
+	Status             *StatusRecord `json:"status"`
+	IsDemo             bool          `json:"is_demo"`
+}
+
+// DeviceReference is returned only by IMEI search.
+type DeviceReference struct {
+	IMEI string `json:"imei"`
+	ID   string `json:"id"`
 }

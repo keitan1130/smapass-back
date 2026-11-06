@@ -20,18 +20,38 @@ type publicDeviceRepository struct {
 	repository.DeviceRepository
 }
 
-func (publicDeviceRepository) FindState(_ context.Context, imei string) (*entity.DeviceState, error) {
-	if imei != "490154203237518" {
+func (publicDeviceRepository) FindState(_ context.Context, imei string, limit, offset int) (*entity.DeviceState, error) {
+	if imei != "11111111-1111-4111-8111-111111111111" {
 		return nil, repository.ErrNotFound
 	}
-	return &entity.DeviceState{IMEI: imei, IMEIs: []string{imei}, RegistrationStatus: "released"}, nil
+	return &entity.DeviceState{ID: imei, RegistrationStatus: "released", History: entity.DeviceHistory{Items: []entity.StatusRecord{{Sequence: 1}}, Total: 1, Limit: limit, Offset: offset}}, nil
 }
 
-func (publicDeviceRepository) StatusHistory(_ context.Context, imei string, _, _ int) ([]entity.StatusRecord, int, error) {
-	if imei != "490154203237518" {
+func (publicDeviceRepository) Records(_ context.Context, imei string, _, _ int) ([]entity.VerificationRecord, int, error) {
+	if imei != "11111111-1111-4111-8111-111111111111" {
 		return nil, 0, repository.ErrNotFound
 	}
-	return []entity.StatusRecord{}, 0, nil
+	return []entity.VerificationRecord{}, 0, nil
+}
+
+func (publicDeviceRepository) ListStates(_ context.Context, imeis []string) ([]entity.DeviceSummary, error) {
+	items := make([]entity.DeviceSummary, 0)
+	for _, imei := range imeis {
+		if imei == "11111111-1111-4111-8111-111111111111" {
+			items = append(items, entity.DeviceSummary{ID: imei})
+		}
+	}
+	return items, nil
+}
+
+func (publicDeviceRepository) Search(_ context.Context, imeis []string) ([]entity.DeviceReference, error) {
+	items := make([]entity.DeviceReference, 0)
+	for _, imei := range imeis {
+		if imei == "490154203237518" {
+			items = append(items, entity.DeviceReference{IMEI: imei, ID: "11111111-1111-4111-8111-111111111111"})
+		}
+	}
+	return items, nil
 }
 
 func TestPublicDeviceStateDoesNotRequireCurrentHolderOrCertificate(t *testing.T) {
@@ -39,15 +59,32 @@ func TestPublicDeviceStateDoesNotRequireCurrentHolderOrCertificate(t *testing.T)
 		path   string
 		status int
 	}{
-		{"/api/devices/490154203237518", 200},
-		{"/api/devices/490154203237518/history", 200},
-		{"/api/devices/490154203237518/history?limit=501", 400},
-		{"/api/devices/490154203237518/history?offset=-1", 400},
-		{"/api/devices/356938035643809", 404},
+		{"/api/devices/11111111-1111-4111-8111-111111111111", 200},
+		{"/api/devices/11111111-1111-4111-8111-111111111111?limit=1&offset=0", 200},
+		{"/api/devices/11111111-1111-4111-8111-111111111111/records", 200},
+		{"/api/devices/11111111-1111-4111-8111-111111111111/history", 404},
+		{"/api/devices/11111111-1111-4111-8111-111111111111?limit=501", 400},
+		{"/api/devices/11111111-1111-4111-8111-111111111111?offset=-1", 400},
+		{"/api/devices/22222222-2222-4222-8222-222222222222", 404},
 		{"/api/devices/invalid", 400},
+		{"/api/devices/490154203237518", 400},
+		{"/api/devices/search?imeis=490154203237518,356938035643809", 200},
+		{"/api/devices/search?imeis=bad", 400},
+		{"/api/devices/search", 400},
+		{"/api/devices/search?imeis=490154203237518,", 400},
+		{"/api/devices/search?imeis=" + strings.TrimSuffix(strings.Repeat("490154203237518,", 51), ","), 400},
+		{"/api/devices/11111111-1111-4111-8111-111111111111/records?limit=501", 400},
+		{"/api/devices/11111111-1111-4111-8111-111111111111/records?offset=-1", 400},
+		{"/api/devices/11111111-1111-4111-8111-111111111111/records?offset=1000001", 400},
+		{"/api/devices?ids=11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222", 200},
+		{"/api/devices?ids=22222222-2222-4222-8222-222222222222", 200},
+		{"/api/devices", 400},
+		{"/api/devices?ids=11111111-1111-4111-8111-111111111111,", 400},
+		{"/api/devices?ids=bad", 400},
+		{"/api/devices?ids=" + strings.TrimSuffix(strings.Repeat("11111111-1111-4111-8111-111111111111,", 51), ","), 400},
 	} {
 		t.Run(test.path, func(t *testing.T) {
-			app := New(controller.NewCertificateController(nil), controller.NewHealthController(nil), nil)
+			app := New(controller.NewHealthController(nil), nil)
 			AddDeviceRoutes(app, controller.NewDeviceController(usecase.NewDeviceUsecase(publicDeviceRepository{}, nil)), func(next echo.HandlerFunc) echo.HandlerFunc {
 				return func(c *echo.Context) error { return echo.NewHTTPError(401, "authentication required") }
 			})
@@ -56,23 +93,23 @@ func TestPublicDeviceStateDoesNotRequireCurrentHolderOrCertificate(t *testing.T)
 			if w.Code != test.status {
 				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 			}
-			if test.path == "/api/devices/490154203237518" {
+			if test.path == "/api/devices/11111111-1111-4111-8111-111111111111" {
 				var result map[string]any
 				if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 					t.Fatal(err)
 				}
-				if result["registration_status"] != "released" || result["certificate"] != nil || result["status"] != nil {
+				if _, ok := result["imei"]; ok {
+					t.Fatal("display leaked IMEI")
+				}
+				if _, ok := result["imeis"]; ok {
+					t.Fatal("display leaked IMEIs")
+				}
+				if result["registration_status"] != "released" || result["history"].(map[string]any)["total"] != float64(1) || result["status"] != nil {
 					t.Fatalf("released state or missing measurements: %v", result)
 				}
 			}
 		})
 	}
-}
-
-type missingRepository struct{}
-
-func (missingRepository) RevokeOwned(context.Context, entity.Principal, string) error {
-	return repository.ErrNotFound
 }
 
 func TestUnconfiguredAttestationFailsClosed(t *testing.T) {
@@ -82,9 +119,8 @@ func TestUnconfiguredAttestationFailsClosed(t *testing.T) {
 	}
 	keys := usecase.NewKeyRegistrationUsecase(nil, v)
 	auth := controller.NewAuthController(usecase.NewAuthUsecase(nil, keys))
-	certificates := controller.NewCertificateController(usecase.NewCertificateUsecase(missingRepository{}))
-	app := New(certificates, controller.NewHealthController(nil), nil)
-	AddAuthRoutes(app, auth, certificates, func(next echo.HandlerFunc) echo.HandlerFunc { return next })
+	app := New(controller.NewHealthController(nil), nil)
+	AddAuthRoutes(app, auth)
 	for i, path := range []string{"/api/auth/challenges", "/api/auth/devices"} {
 		r := httptest.NewRequest("POST", path, strings.NewReader(`{"imei":"490154203237518"}`))
 		r.RemoteAddr = []string{"192.0.2.1:1234", "192.0.2.2:1234"}[i]
@@ -94,17 +130,6 @@ func TestUnconfiguredAttestationFailsClosed(t *testing.T) {
 			t.Fatalf("unconfigured key registration status=%d", w.Code)
 		}
 	}
-}
-
-func (missingRepository) FindLatestByIMEI(context.Context, string) (*entity.Certificate, error) {
-	return nil, repository.ErrNotFound
-}
-
-func (missingRepository) FindLatestByIMEIs(context.Context, []string) ([]entity.Certificate, error) {
-	return []entity.Certificate{}, nil
-}
-func (missingRepository) Records(context.Context, string, int, int) ([]entity.VerificationRecord, int, error) {
-	return nil, 0, repository.ErrNotFound
 }
 
 type unavailableDatabase struct{}
@@ -120,21 +145,23 @@ func TestPublicAPIErrorContract(t *testing.T) {
 		contains string
 	}{
 		{"/health", 200, `"status":"ok"`},
+		{"/certificates/11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
+		{"/api/auth/session", 404, `"code":"not_found"`},
 		{"/missing", 404, `"code":"not_found"`},
 		{"/ready", 503, `"error"`},
-		{"/api/certificates/490154203237518", 404, `"code":"not_found"`},
-		{"/api/certificates/490154203237518/records", 404, `"code":"not_found"`},
-		{"/api/certificates/01ABCDEFGH", 400, `"code":"invalid_device"`},
-		{"/api/certificates/50982a98-31c1-595e-a66d-c3688af07155", 400, `"code":"invalid_device"`},
-		{"/api/certificates?ids=490154203237518", 400, `"code":"invalid_device"`},
-		{"/api/certificates/invalid", 400, `"code":"invalid_device"`},
-		{"/api/certificates", 400, `"code":"invalid_device"`},
-		{"/api/certificates?imeis=490154203237518", 200, `"items":[]`},
-		{"/api/certificates/490154203237518/records?limit=501", 400, `"error"`},
-		{"/api/certificates/490154203237518/records?offset=-1", 400, `"error"`},
+		{"/api/certificates/11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
+		{"/api/certificates/11111111-1111-4111-8111-111111111111/records", 404, `"code":"not_found"`},
+		{"/api/certificates/01ABCDEFGH", 404, `"code":"not_found"`},
+		{"/api/certificates/50982a98-31c1-595e-a66d-c3688af07155", 404, `"code":"not_found"`},
+		{"/api/certificates?ids=11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
+		{"/api/certificates/invalid", 404, `"code":"not_found"`},
+		{"/api/certificates", 404, `"code":"not_found"`},
+		{"/api/certificates?imeis=11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
+		{"/api/certificates/11111111-1111-4111-8111-111111111111/records?limit=501", 404, `"code":"not_found"`},
+		{"/api/certificates/11111111-1111-4111-8111-111111111111/records?offset=-1", 404, `"code":"not_found"`},
 	} {
 		t.Run(test.path, func(t *testing.T) {
-			app := New(controller.NewCertificateController(usecase.NewCertificateUsecase(missingRepository{})), controller.NewHealthController(usecase.NewHealthUsecase(unavailableDatabase{})), []string{"http://localhost:3000"})
+			app := New(controller.NewHealthController(usecase.NewHealthUsecase(unavailableDatabase{})), []string{"http://localhost:3000"})
 			request := httptest.NewRequest("GET", test.path, nil)
 			request.Header.Set("Origin", "http://localhost:3000")
 			response := httptest.NewRecorder()
