@@ -21,7 +21,7 @@ func TestTokenRotationReplayRevocationAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := u.Authenticate(ctx, a.AccessToken)
-	if err != nil || p.IMEI != a.IMEI || p.SessionID == "" {
+	if err != nil || p.DeviceID != a.DeviceID || p.SessionID == "" {
 		t.Fatalf("initial credentials: %v", err)
 	}
 	var plaintext bool

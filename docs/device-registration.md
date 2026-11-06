@@ -1,12 +1,12 @@
-# IMEI による端末・登録者管理
+# UUID による端末・登録者管理
 
 ## 識別と公開入口
 
-端末は IMEI 全桁（15桁の文字列）を主キーとする。鍵・計測ログ・状態・証明書・登録者の期間は IMEI へひも付ける。端末は固定の公開用ランダムUUIDも持つ。登録はIMEI1個のみで、公開UUIDと1対1に対応する。他のIMEIを後から追加・統合する機能は設けない。
+端末はランダムUUIDの `devices.id` を主キーとする。鍵・計測ログ・状態・登録期間・アプリ認証は `device_id` へひも付ける。IMEI全桁（15桁の文字列）は初回登録・再登録・検索のための一意な属性として `devices` に保持する。登録はIMEI1個のみで、公開UUIDと1対1に対応する。他のIMEIを後から追加・統合する機能は設けない。
 
 証明書は `GET /api/devices/{id}` の最新観測値と全登録期間の履歴を表示する。WebページとQRは `/certificates/{id}` を入口にする。Go APIはHTMLを生成しない。
 
-持ち主が替わっても同じ登録IMEIへ記録を追加し、最新状態・全履歴を公開参照する。所有者の識別情報・認証情報・attestationは公開しない。
+持ち主が替わっても同じ端末UUIDへ記録を追加し、最新状態・全履歴を公開参照する。所有者の識別情報・認証情報・attestationは公開しない。
 
 ## API
 
@@ -17,20 +17,20 @@ POST /api/devices
 Authorization: Bearer <access token>
 Content-Type: application/json
 
-{"imei":"490154203237518","public_key":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n","proof":{"challenge_id":"<チャレンジID>","certificate_chain":["<DERをBase64>","<中間証明書・ルート>"],"signature_der":"<署名DERをBase64>"}}
+{"device_id":"22222222-2222-4222-8222-222222222222","public_key":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n","proof":{"challenge_id":"<チャレンジID>","certificate_chain":["<DERをBase64>","<中間証明書・ルート>"],"signature_der":"<署名DERをBase64>"}}
 ```
 
-- IMEIは1個。15桁の数字とチェックディジットを検査する。初回登録に使ったIMEIを鍵交換でも指定し、他のIMEIは追加しない。
-- 鍵は P-256 の公開鍵（PEM SubjectPublicKeyInfo）、署名方式は ES256。形式を検査して保存する。Google の信頼ルート、失効状態、ハードウェア鍵、起動状態、アプリ情報、チャレンジと所有確認用署名を検証する。計測ログ署名検証は #3 で実装する。IMEI 自体の検証範囲は通常の key attestation と区別する。
+- 初回登録・再登録はIMEI1個。15桁の数字とチェックディジットを検査する。登録後の操作では `device_id` を指定する。別IMEIの追加・統合はしない。
+- 鍵は P-256 の公開鍵（PEM SubjectPublicKeyInfo）、署名方式は ES256。形式を検査して保存する。Google の信頼ルート、失効状態、ハードウェア鍵、起動状態、アプリ情報、チャレンジと所有確認用署名を検証する。計測ログの署名対象も端末UUIDを使う。IMEI 自体の検証範囲は通常の key attestation と区別する。
 - 同じ登録者が同じ鍵で再送した場合は同じ登録期間と鍵を返す。同じ登録者の鍵交換では旧鍵を失効して履歴を保持する。
-- 応答は `imei`、`ownership_id`、`registered_at`、`last_verified_log_at`、`reclaimable_at`、`key_id`。所有者の認証情報は返さない。
+- 応答は `device_id`、`ownership_id`、`registered_at`、`last_verified_log_at`、`reclaimable_at`、`key_id`。所有者の認証情報は返さない。
 
 ```http
 POST /api/devices/lookup
 Authorization: Bearer <access token>
 Content-Type: application/json
 
-{"imei":"490154203237518"}
+{"device_id":"22222222-2222-4222-8222-222222222222"}
 ```
 
 現在そのアプリに登録され、公開鍵の登録が完了した端末だけを返す。他人の端末と不存在はともに404。公開証明書のデータは `GET /api/devices/{id}` を使う。
@@ -54,11 +54,11 @@ Content-Type: application/json
 売却や譲渡の際は、現在の登録者が次の API を呼ぶと3日待たずに登録を終了できる。
 
 ```http
-POST /api/devices/490154203237518/revoke
+POST /api/devices/22222222-2222-4222-8222-222222222222/revoke
 Authorization: Bearer <access token>
 ```
 
-成功は204（本文なし）。登録したIMEIでその端末の登録を終了する。認証済みの現在の登録者だけが操作でき、別端末の有効なトークンでの操作や不存在は404、不正な IMEI は400、不正・失効済み・旧登録者のトークンは401となる。
+成功は204（本文なし）。登録したUUIDでその端末の登録を終了する。認証済みの現在の登録者だけが操作でき、別端末の有効なトークンでの操作や不存在は404、不正な UUID は400、不正・失効済み・旧登録者のトークンは401となる。
 
 登録期間の終了、利用中の鍵と認証情報の失効を1トランザクションで行う。公開状態・履歴は参照できるまま維持し、次の利用者は 新しいチャレンジ・鍵・検証証跡を用意し、`/api/auth/devices` ですぐ再登録できる。旧鍵によるログは受け付けない。旧登録者が再送しても、新登録者の登録は失効しない。
 

@@ -2,7 +2,7 @@
 
 ## 登録するものと検証条件
 
-利用者のアカウントやログインは使わず、端末は引き続き IMEI 全桁で管理する。初回はサーバーのチャレンジを取得し、Android Keystore で作った公開鍵・attestation 証明書チェーン・秘密鍵での署名を送る。検証に成功した場合だけ、端末の登録期間・公開鍵・アプリ用の認証情報を同じトランザクションで保存する。
+利用者のアカウントやログインは使わず、端末は UUID を主キーに管理し、初回登録・再登録では IMEI 全桁で特定する。初回はサーバーのチャレンジを取得し、Android Keystore で作った公開鍵・attestation 証明書チェーン・秘密鍵での署名を送る。検証に成功した場合だけ、端末の登録期間・公開鍵・アプリ用の認証情報を同じトランザクションで保存する。
 
 採用する鍵は ECDSA P-256 / SHA-256（`ES256`）。公開鍵は PEM SubjectPublicKeyInfo。今回の所有確認用署名は Android の `SHA256withECDSA` が返す ASN.1 DER を標準 Base64 にして `signature_der` に入れる。計測ログも同じ鍵のSHA256withECDSAとDER形式を使うが、署名対象は [計測ログ送信](measurement-ingestion.md) のJCS envelope。チャレンジの署名対象バイト列とは区別する。
 
@@ -51,7 +51,7 @@ ATTESTATION_REQUIRE_IMEI=false
 2. 応答の `attestation_challenge` を標準 Base64 から復号し、Android の `KeyGenParameterSpec.Builder.setAttestationChallenge()` に渡して新しい P-256 鍵を生成する。
 3. `signing_payload` を Base64 から復号する。そのバイト列を再構築・JSON 再エンコードせず、生成した鍵の `SHA256withECDSA` で署名する。
 4. `KeyStore.getCertificateChain()` の証明書をリーフから順に DER → 標準 Base64 にする。公開鍵は X.509 SubjectPublicKeyInfo → PEM にする。
-5. 次の登録 API に送る。成功は201で、従来と同じトークン一式を返す。この時点で公開鍵の登録も完了している。
+5. 次の登録 API に送る。成功は201で、端末 UUID の `device_id` とトークン一式を返す。この時点で公開鍵の登録も完了している。
 
 ```http
 POST /api/auth/devices
@@ -76,7 +76,7 @@ Content-Type: application/json
 
 ## 鍵交換
 
-アクセストークンを付け、`POST /api/devices/key-challenges` に `{"imei":"490154203237518"}` を送る。そのチャレンジで新しい鍵と証明書を生成し、`POST /api/devices` へ単一の `imei` / `public_key` に上と同じ `proof` を加えて送る。登録したIMEIだけを指定する。
+アクセストークンを付け、`POST /api/devices/key-challenges` に `{"device_id":"22222222-2222-4222-8222-222222222222"}` を送る。そのチャレンジで新しい鍵と証明書を生成し、`POST /api/devices` へ単一の `device_id` / `public_key` に上と同じ `proof` を加えて送る。登録した端末UUIDだけを指定する。
 
 チャレンジは現在のアプリ登録に結び付く。他アプリ登録のチャレンジや、初回登録のチャレンジで鍵交換はできない。保存直前にも同じトランザクション内でトークンと端末への権限を確認する。
 
@@ -110,4 +110,4 @@ Content-Type: application/json
 - [Google: 証明書失効状態](https://android.googleapis.com/attestation/status)
 - [Android: applicationId の設定](https://developer.android.com/build/configure-app-module)
 
-登録・鍵交換は常にIMEI1個。鍵交換チャレンジの本文は `{"imei":"登録IMEI"}`、鍵交換本文は `imei`・`public_key`・`proof`。`imeis` 配列は受け付けない。署名対象は `smapass-key-registration-v2` のサーバー生成バイト列で、IMEIは単一の `imei` に格納する。Androidは返された `signing_payload` の復号バイト列をそのまま署名する。計測ログのJCS形式は変更しない。
+登録はIMEI1個、鍵交換は端末UUID1個。鍵交換チャレンジの本文は `{"device_id":"登録UUID"}`、鍵交換本文は `device_id`・`public_key`・`proof`。IMEIや `imeis` 配列による鍵交換は受け付けない。署名対象は `smapass-key-registration-v3` のサーバー生成バイト列。初回登録用は `imei`、鍵交換用は `device_id` を含める。Androidは返された `signing_payload` の復号バイト列をそのまま署名する。

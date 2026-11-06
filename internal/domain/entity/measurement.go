@@ -42,7 +42,7 @@ type SubmitMeasurement struct {
 // including null measurements, are required in the canonical representation.
 type MeasurementPayload struct {
 	SchemaVersion int                `json:"schema_version"`
-	IMEI          string             `json:"imei"`
+	DeviceID      string             `json:"device_id"`
 	KeyID         string             `json:"key_id"`
 	Sequence      int64              `json:"sequence"`
 	Type          string             `json:"type"`
@@ -76,7 +76,7 @@ type StatusMeasurement struct {
 }
 
 type MeasurementReceipt struct {
-	IMEI              string    `json:"imei"`
+	DeviceID          string    `json:"device_id"`
 	Sequence          int64     `json:"sequence"`
 	PayloadHash       string    `json:"payload_hash"`
 	ReceivedAt        time.Time `json:"received_at"`
@@ -177,8 +177,8 @@ func PrepareMeasurement(input SubmitMeasurement, now time.Time) (*MeasurementLog
 	if err != nil || !bytes.Equal(data, typed) {
 		return nil, ErrInvalidMeasurement
 	}
-	imei, err := NormalizeIMEI(payload.IMEI)
-	if err != nil || imei != payload.IMEI {
+	deviceID, err := NormalizeDeviceID(payload.DeviceID)
+	if err != nil || deviceID != payload.DeviceID {
 		return nil, ErrInvalidMeasurement
 	}
 	id, err := uuid.Parse(payload.KeyID)

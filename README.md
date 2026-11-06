@@ -1,6 +1,6 @@
 # smapass-back
 
-中古 Android 端末を IMEI で管理し、状態履歴と出品時の証明書を扱う Go API です。Go と PostgreSQL を Docker Compose で動かします。保存先は PostgreSQL のみで、S3 / LocalStack は使いません。
+中古 Android 端末を UUID で管理し、IMEI で登録・検索して、状態履歴と出品時の証明書を扱う Go API です。Go と PostgreSQL を Docker Compose で動かします。保存先は PostgreSQL のみで、S3 / LocalStack は使いません。
 
 Echo → controller → usecase → repository → Bun / PostgreSQL の構成です。
 
@@ -83,10 +83,10 @@ GitHub Actions は push / PR 時に品質チェック、race 検出・カバレ�
 - 計測ログの受信・JCSとECDSA署名検証・PostgreSQLへの元ログと表示用データの一括保存・同一送信の再試行
 - Android ハードウェア鍵の attestation・秘密鍵の保有確認、初回登録と鍵交換のチャレンジ
 - IMEIと公開UUIDの1対1の対応、登録者履歴、3日間の非活動を条件とした再登録、鍵の交代
-- ログインなしの端末認証情報の発行・更新・失効、端末と証明書への書き込み権限の確認
+- ログインなしの端末認証情報の発行・更新・失効、端末UUIDに対する書き込み権限の確認
 - 現在の登録者による手動失効（認証情報・鍵を失効、履歴は維持、3日待たずに次の登録が可能）
 - IMEIからUUIDへの検索、UUIDによる最新状態・全期間の履歴と検証ログの公開、一括概要取得
-- 初期スキーマ1本、旧DB向けの明示的移行経路、デモ、レート制限とCORS
+- UUID主キーの初期スキーマ1本、デモ、レート制限とCORS
 
 評価算出、出品先の更新、事業者の整備記録登録、チェーン送信・検証は未実装。証明書の発行・再発行は不要。書き込みには端末用アクセストークンと検証済み鍵が必要。カード画像・QR・OGP・ブックマークはWebが担当する。
 

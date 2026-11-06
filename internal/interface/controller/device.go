@@ -31,7 +31,7 @@ func (c *DeviceController) Ingest(ctx *echo.Context) error {
 	if err := entity.DecodeMeasurementJSON(data, &input); err != nil {
 		return err
 	}
-	receipt, err := c.usecase.Ingest(ctx.Request().Context(), principal, ctx.Param("imei"), input)
+	receipt, err := c.usecase.Ingest(ctx.Request().Context(), principal, ctx.Param("id"), input)
 	if err != nil {
 		return err
 	}
@@ -98,12 +98,12 @@ func (c *DeviceController) Lookup(ctx *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
 	}
 	var input struct {
-		IMEI string `json:"imei"`
+		DeviceID string `json:"device_id"`
 	}
 	if err := decodeDevice(ctx, &input); err != nil {
 		return err
 	}
-	device, err := c.usecase.Lookup(ctx.Request().Context(), principal, input.IMEI)
+	device, err := c.usecase.Lookup(ctx.Request().Context(), principal, input.DeviceID)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (c *DeviceController) Revoke(ctx *echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
 	}
-	if err := c.usecase.Revoke(ctx.Request().Context(), principal, ctx.Param("imei")); err != nil {
+	if err := c.usecase.Revoke(ctx.Request().Context(), principal, ctx.Param("id")); err != nil {
 		return err
 	}
 	return ctx.NoContent(http.StatusNoContent)

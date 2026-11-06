@@ -34,7 +34,8 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 		if _, err := tx.ExecContext(ctx, "INSERT INTO devices (imei) VALUES (?) ON CONFLICT (imei) DO NOTHING", imei); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei); err != nil {
+		var deviceID string
+		if err := tx.NewRaw("SELECT id FROM devices WHERE imei=? FOR UPDATE", imei).Scan(ctx, &deviceID); err != nil {
 			return err
 		}
 		if _, err := keychallenge.Consume(ctx, tx, "enroll", imei, entity.Principal{}, input.Verified); err != nil {
@@ -49,7 +50,7 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 			StartedAt         time.Time
 			LastVerifiedLogAt *time.Time
 		}
-		err := tx.NewRaw("SELECT id,started_at,last_verified_log_at FROM device_ownerships WHERE imei=? AND ended_at IS NULL", imei).Scan(ctx, &old)
+		err := tx.NewRaw("SELECT id,started_at,last_verified_log_at FROM device_ownerships WHERE device_id=? AND ended_at IS NULL", deviceID).Scan(ctx, &old)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -69,21 +70,21 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 		}
 		installation := uuid.NewString()
 		var ownership int64
-		if err := tx.NewRaw("INSERT INTO device_ownerships (imei,owner_issuer,owner_subject,started_at) VALUES (?,?,?,?) RETURNING id", imei, entity.DeviceIssuer, installation, now).Scan(ctx, &ownership); err != nil {
+		if err := tx.NewRaw("INSERT INTO device_ownerships (device_id,owner_issuer,owner_subject,started_at) VALUES (?,?,?,?) RETURNING id", deviceID, entity.DeviceIssuer, installation, now).Scan(ctx, &ownership); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO app_installations (id,imei,ownership_id,created_at) VALUES (?,?,?,?)", installation, imei, ownership, now); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO app_installations (id,device_id,ownership_id,created_at) VALUES (?,?,?,?)", installation, deviceID, ownership, now); err != nil {
 			return err
 		}
 		evidence, err := json.Marshal(input.Verified)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO device_keys (imei,ownership_id,public_key,signature_algorithm,attestation,registration_challenge_id,attestation_verified_at,imei_attested)
-			VALUES (?,?,?,'ES256',?::jsonb,?,?,?)`, imei, ownership, input.PublicKey, string(evidence), input.Verified.ChallengeID, now, input.Verified.IMEIAttested); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO device_keys (device_id,ownership_id,public_key,signature_algorithm,attestation,registration_challenge_id,attestation_verified_at,imei_attested)
+			VALUES (?,?,?,'ES256',?::jsonb,?,?,?)`, deviceID, ownership, input.PublicKey, string(evidence), input.Verified.ChallengeID, now, input.Verified.IMEIAttested); err != nil {
 			return err
 		}
-		pair, err = issue(ctx, tx, installation, imei, material, now)
+		pair, err = issue(ctx, tx, installation, deviceID, material, now)
 		return err
 	})
 	var pgErr pgdriver.Error
@@ -93,20 +94,20 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 	return pair, err
 }
 
-func issue(ctx context.Context, tx bun.Tx, installation, imei string, material entity.TokenMaterial, now time.Time) (*entity.TokenPair, error) {
+func issue(ctx context.Context, tx bun.Tx, installation, deviceID string, material entity.TokenMaterial, now time.Time) (*entity.TokenPair, error) {
 	expires := now.Add(entity.RefreshLifetime)
 	_, err := tx.ExecContext(ctx, `INSERT INTO app_tokens (installation_id,access_hash,refresh_hash,access_expires_at,refresh_expires_at,created_at)
 		VALUES (?,?,?,?,?,?)`, installation, entity.TokenDigest(material.Access), entity.TokenDigest(material.Refresh), now.Add(entity.AccessLifetime), expires, now)
 	if err != nil {
 		return nil, err
 	}
-	return &entity.TokenPair{IMEI: imei, AccessToken: material.Access, RefreshToken: material.Refresh, TokenType: "Bearer", ExpiresIn: int(entity.AccessLifetime.Seconds()), RefreshExpiresAt: expires}, nil
+	return &entity.TokenPair{DeviceID: deviceID, AccessToken: material.Access, RefreshToken: material.Refresh, TokenType: "Bearer", ExpiresIn: int(entity.AccessLifetime.Seconds()), RefreshExpiresAt: expires}, nil
 }
 
 type refreshRow struct {
 	ID               string
 	InstallationID   string
-	IMEI             string
+	DeviceID         string
 	RefreshExpiresAt time.Time
 	RotatedAt        *time.Time
 	RevokedAt        *time.Time
@@ -115,19 +116,19 @@ type refreshRow struct {
 
 // Every mutating path uses device -> installation -> token lock order.
 func lockRefresh(ctx context.Context, tx bun.Tx, token string) (*refreshRow, error) {
-	var imei string
-	err := tx.NewRaw(`SELECT i.imei FROM app_tokens t JOIN app_installations i ON i.id=t.installation_id WHERE t.refresh_hash=?`, entity.TokenDigest(token)).Scan(ctx, &imei)
+	var deviceID string
+	err := tx.NewRaw(`SELECT i.device_id FROM app_tokens t JOIN app_installations i ON i.id=t.installation_id WHERE t.refresh_hash=?`, entity.TokenDigest(token)).Scan(ctx, &deviceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, entity.ErrUnauthenticated
 	}
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT id FROM devices WHERE id=? FOR UPDATE", deviceID); err != nil {
 		return nil, err
 	}
 	var row refreshRow
-	err = tx.NewRaw(`SELECT t.id,t.installation_id,i.imei,t.refresh_expires_at,t.rotated_at,i.revoked_at,o.ended_at
+	err = tx.NewRaw(`SELECT t.id,t.installation_id,i.device_id,t.refresh_expires_at,t.rotated_at,i.revoked_at,o.ended_at
 		FROM app_tokens t JOIN app_installations i ON i.id=t.installation_id
 		JOIN device_ownerships o ON o.id=i.ownership_id WHERE t.refresh_hash=? FOR UPDATE OF i`, entity.TokenDigest(token)).Scan(ctx, &row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -160,7 +161,7 @@ func (r *Repository) Refresh(ctx context.Context, token string, material entity.
 		if _, err := tx.ExecContext(ctx, "UPDATE app_tokens SET rotated_at=? WHERE id=?", now, row.ID); err != nil {
 			return err
 		}
-		pair, err = issue(ctx, tx, row.InstallationID, row.IMEI, material, now)
+		pair, err = issue(ctx, tx, row.InstallationID, row.DeviceID, material, now)
 		return err
 	})
 	if err == nil && rejected {
@@ -185,7 +186,7 @@ func (r *Repository) Revoke(ctx context.Context, token string) error {
 
 func (r *Repository) Authenticate(ctx context.Context, token string) (entity.Principal, error) {
 	var p entity.Principal
-	err := r.db.NewRaw(`SELECT t.id AS session_id, i.id AS subject,i.imei FROM app_tokens t
+	err := r.db.NewRaw(`SELECT t.id AS session_id, i.id AS subject,i.device_id FROM app_tokens t
 		JOIN app_installations i ON i.id=t.installation_id JOIN device_ownerships o ON o.id=i.ownership_id
 		WHERE t.access_hash=? AND t.rotated_at IS NULL AND t.access_expires_at>clock_timestamp()
 		AND i.revoked_at IS NULL AND o.ended_at IS NULL AND o.owner_issuer=? AND o.owner_subject=i.id::text`, entity.TokenDigest(token), entity.DeviceIssuer).Scan(ctx, &p)

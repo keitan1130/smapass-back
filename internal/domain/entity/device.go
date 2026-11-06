@@ -26,17 +26,17 @@ var (
 )
 
 // Principal is supplied only by the verified authentication adapter.
-type Principal struct{ Issuer, Subject, SessionID, IMEI string }
+type Principal struct{ Issuer, Subject, SessionID, DeviceID string }
 
 type RegisterDevice struct {
-	IMEI      string       `json:"imei"`
+	DeviceID  string       `json:"device_id"`
 	PublicKey string       `json:"public_key"`
 	Proof     KeyProof     `json:"proof"`
 	Verified  *VerifiedKey `json:"-"`
 }
 
 type Device struct {
-	IMEI              string     `json:"imei"`
+	DeviceID          string     `json:"device_id"`
 	OwnershipID       int64      `json:"ownership_id"`
 	RegisteredAt      time.Time  `json:"registered_at"`
 	LastVerifiedLogAt *time.Time `json:"last_verified_log_at"`
@@ -72,29 +72,37 @@ func NormalizeIMEI(input string) (string, error) {
 }
 
 func (r *RegisterDevice) Normalize() error {
-	imei, err := NormalizeIMEI(r.IMEI)
+	id, err := NormalizeDeviceID(r.DeviceID)
 	if err != nil {
 		return err
 	}
-	r.IMEI = imei
-	block, rest := pem.Decode([]byte(r.PublicKey))
+	r.DeviceID = id
+	key, err := NormalizePublicKey(r.PublicKey)
+	if err != nil {
+		return err
+	}
+	r.PublicKey = key
+	return nil
+}
+
+func NormalizePublicKey(value string) (string, error) {
+	block, rest := pem.Decode([]byte(value))
 	if block == nil || block.Type != "PUBLIC KEY" || len(strings.TrimSpace(string(rest))) != 0 {
-		return ErrInvalidDevice
+		return "", ErrInvalidDevice
 	}
 	key, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return ErrInvalidDevice
+		return "", ErrInvalidDevice
 	}
 	public, ok := key.(*ecdsa.PublicKey)
 	if !ok || public.Curve != elliptic.P256() {
-		return ErrInvalidDevice
+		return "", ErrInvalidDevice
 	}
 	encoded, err := x509.MarshalPKIXPublicKey(public)
 	if err != nil {
-		return ErrInvalidDevice
+		return "", ErrInvalidDevice
 	}
-	r.PublicKey = string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: encoded}))
-	return nil
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: encoded})), nil
 }
 
 // DeviceState is public lifetime state, independent of the current registrant.

@@ -75,7 +75,7 @@ func TestSharedJCSVectors(t *testing.T) {
 }
 
 func testMeasurementPayload() MeasurementPayload {
-	return MeasurementPayload{SchemaVersion: 1, IMEI: "490154203237518", KeyID: "11111111-1111-4111-8111-111111111111",
+	return MeasurementPayload{SchemaVersion: 1, DeviceID: "22222222-2222-4222-8222-222222222222", KeyID: "11111111-1111-4111-8111-111111111111",
 		Sequence: 1, Type: "status", CollectedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Status: &StatusMeasurement{OSVersion: "16", SDKInt: 36}}
 }
 
@@ -140,22 +140,27 @@ func TestMeasurementRejectsAmbiguousPrivateAndInvalidData(t *testing.T) {
 	// is separate and no invalid payload may reach the repository.
 	sig := base64.StdEncoding.EncodeToString([]byte{0x30, 6, 2, 1, 1, 2, 1, 1})
 	tests := map[string]string{
-		"noncanonical":       " " + base,
-		"duplicate envelope": strings.Replace(base, `"schema_version":1`, `"schema_version":1,"schema_version":1`, 1),
-		"duplicate nested":   strings.Replace(base, `"sdk_int":36`, `"sdk_int":36,"sdk_int":36`, 1),
-		"private member":     strings.Replace(base, `"schema_version":1`, `"owner_subject":"private","schema_version":1`, 1),
-		"missing null":       strings.Replace(base, `"had_abnormal_exit":null,`, "", 1),
-		"wrong case":         strings.Replace(base, `"imei"`, `"IMEI"`, 1),
-		"invalid unicode":    strings.Replace(base, `"os_version":"16"`, `"os_version":"\ud800"`, 1),
-		"invalid utf8":       strings.Replace(base, `"os_version":"16"`, `"os_version":"`+string([]byte{0xff})+`"`, 1),
-		"unknown type":       strings.Replace(base, `"type":"status"`, `"type":"inspection"`, 1),
-		"precision loss":     strings.Replace(base, `"battery_temp_c":null`, `"battery_temp_c":32.34`, 1),
-		"overflow":           strings.Replace(base, `"battery_cycle_count":null`, `"battery_cycle_count":2147483648`, 1),
-		"invalid first hash": strings.Replace(base, `"previous_hash":null`, `"previous_hash":"`+strings.Repeat("a", 64)+`"`, 1),
-		"unsafe sequence":    strings.Replace(base, `"sequence":1`, `"sequence":9007199254740992`, 1),
-		"submicrosecond":     strings.Replace(base, `2026-01-01T00:00:00Z`, `2026-01-01T00:00:00.000000001Z`, 1),
-		"future time":        strings.Replace(base, `2026-01-01T00:00:00Z`, `2026-01-01T00:06:00Z`, 1),
-		"oversized":          strings.Repeat("x", MaxMeasurementBytes+1),
+		"noncanonical":         " " + base,
+		"unsupported version":  strings.Replace(base, `"schema_version":1`, `"schema_version":2`, 1),
+		"IMEI instead of UUID": strings.Replace(base, `"device_id":"22222222-2222-4222-8222-222222222222"`, `"imei":"490154203237518"`, 1),
+		"IMEI injection":       strings.Replace(base, `"key_id":`, `"imei":"490154203237518","key_id":`, 1),
+		"invalid device UUID":  strings.Replace(base, "22222222-2222-4222-8222-222222222222", "490154203237518", 1),
+		"zero device UUID":     strings.Replace(base, "22222222-2222-4222-8222-222222222222", "00000000-0000-0000-0000-000000000000", 1),
+		"duplicate envelope":   strings.Replace(base, `"schema_version":1`, `"schema_version":1,"schema_version":1`, 1),
+		"duplicate nested":     strings.Replace(base, `"sdk_int":36`, `"sdk_int":36,"sdk_int":36`, 1),
+		"private member":       strings.Replace(base, `"schema_version":1`, `"owner_subject":"private","schema_version":1`, 1),
+		"missing null":         strings.Replace(base, `"had_abnormal_exit":null,`, "", 1),
+		"wrong case":           strings.Replace(base, `"device_id"`, `"DEVICE_ID"`, 1),
+		"invalid unicode":      strings.Replace(base, `"os_version":"16"`, `"os_version":"\ud800"`, 1),
+		"invalid utf8":         strings.Replace(base, `"os_version":"16"`, `"os_version":"`+string([]byte{0xff})+`"`, 1),
+		"unknown type":         strings.Replace(base, `"type":"status"`, `"type":"inspection"`, 1),
+		"precision loss":       strings.Replace(base, `"battery_temp_c":null`, `"battery_temp_c":32.34`, 1),
+		"overflow":             strings.Replace(base, `"battery_cycle_count":null`, `"battery_cycle_count":2147483648`, 1),
+		"invalid first hash":   strings.Replace(base, `"previous_hash":null`, `"previous_hash":"`+strings.Repeat("a", 64)+`"`, 1),
+		"unsafe sequence":      strings.Replace(base, `"sequence":1`, `"sequence":9007199254740992`, 1),
+		"submicrosecond":       strings.Replace(base, `2026-01-01T00:00:00Z`, `2026-01-01T00:00:00.000000001Z`, 1),
+		"future time":          strings.Replace(base, `2026-01-01T00:00:00Z`, `2026-01-01T00:06:00Z`, 1),
+		"oversized":            strings.Repeat("x", MaxMeasurementBytes+1),
 	}
 	for name, payload := range tests {
 		t.Run(name, func(t *testing.T) {

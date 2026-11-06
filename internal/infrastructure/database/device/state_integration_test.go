@@ -25,11 +25,11 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 		t.Fatalf("initial lifetime state: %+v %v", initial, err)
 	}
 	_, oldTokens, old := credentials(t, db, imei)
-	first, err := u.Register(ctx, old, input(t, db, old, imei))
+	first, err := u.Register(ctx, old, input(t, db, old, old.DeviceID))
 	if err != nil || first.NextSequence != 29 || first.PreviousHash == nil {
 		t.Fatalf("first continuation: %+v %v", first, err)
 	}
-	if err := u.Revoke(ctx, old, imei); err != nil {
+	if err := u.Revoke(ctx, old, old.DeviceID); err != nil {
 		t.Fatal(err)
 	}
 	released, err := r.FindState(ctx, publicID(t, db, imei), 100, 0)
@@ -43,8 +43,8 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	if _, err := auth.Authenticate(ctx, oldTokens.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("previous holder retained authority: %v", err)
 	}
-	second, err := u.Register(ctx, next, input(t, db, next, imei))
-	if err != nil || second.IMEI != imei || second.OwnershipID == first.OwnershipID || second.NextSequence != 29 || second.PreviousHash == nil || *second.PreviousHash != *first.PreviousHash {
+	second, err := u.Register(ctx, next, input(t, db, next, next.DeviceID))
+	if err != nil || second.DeviceID != initial.ID || second.OwnershipID == first.OwnershipID || second.NextSequence != 29 || second.PreviousHash == nil || *second.PreviousHash != *first.PreviousHash {
 		t.Fatalf("next holder did not inherit chain position: %+v %v", second, err)
 	}
 	if err := insertLog(ctx, db, second, 1, true); err == nil {
@@ -56,8 +56,8 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	if err := insertLogAt(ctx, db, second, 29, true, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO device_status (log_id,imei,os_version,sdk_int,collected_at)
-		SELECT id,imei,'16',36,collected_at FROM device_logs WHERE imei=? AND seq=29`, imei); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO device_status (log_id,device_id,os_version,sdk_int,collected_at)
+		SELECT id,device_id,'16',36,collected_at FROM device_logs WHERE device_id=? AND seq=29`, second.DeviceID); err != nil {
 		t.Fatal(err)
 	}
 	continued, err := r.FindState(ctx, publicID(t, db, imei), 100, 0)
@@ -81,17 +81,17 @@ func TestKnownDeviceStateWithoutMeasurements(t *testing.T) {
 	ctx := context.Background()
 	_, _, principal := credentials(t, db, "490154203237518")
 	r := NewRepository(db)
-	state, err := r.FindState(ctx, publicID(t, db, principal.IMEI), 100, 0)
+	state, err := r.FindState(ctx, principal.DeviceID, 100, 0)
 	if err != nil || state.RecordCount != 0 || state.Spec != nil || state.Status != nil || state.History.Total != 0 || state.History.Items == nil || state.FirstCollectedAt != nil || state.LastCollectedAt != nil {
 		t.Fatalf("known device returned invented measurements: %+v %v", state, err)
 	}
-	if items, total, err := historyPage(t, ctx, r, publicID(t, db, principal.IMEI), 100, 0); err != nil || total != 0 || items == nil || len(items) != 0 {
+	if items, total, err := historyPage(t, ctx, r, principal.DeviceID, 100, 0); err != nil || total != 0 || items == nil || len(items) != 0 {
 		t.Fatalf("empty history: %+v %d %v", items, total, err)
 	}
-	if err := r.Revoke(ctx, principal, principal.IMEI); err != nil {
+	if err := r.Revoke(ctx, principal, principal.DeviceID); err != nil {
 		t.Fatal(err)
 	}
-	if state, err := r.FindState(ctx, publicID(t, db, principal.IMEI), 100, 0); err != nil || state.RegistrationStatus != "released" {
+	if state, err := r.FindState(ctx, principal.DeviceID, 100, 0); err != nil || state.RegistrationStatus != "released" {
 		t.Fatalf("released device unavailable: %+v %v", state, err)
 	}
 }

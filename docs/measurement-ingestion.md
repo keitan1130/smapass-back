@@ -1,17 +1,17 @@
 # Androidからの計測ログ送信
 
-`POST /api/devices/{imei}/logs` で端末スペックまたは状態計測を1件保存する。端末登録済みのアクセストークンと、その登録期間の有効なハードウェア鍵が必要。保存後は `GET /api/devices/{id}` の `history` から状態・計測履歴を取得できる。Androidアプリ・Web画面のコードは別リポジトリの担当。
+`POST /api/devices/{id}/logs` で端末スペックまたは状態計測を1件保存する。端末登録済みのアクセストークンと、その登録期間の有効なハードウェア鍵が必要。保存後は `GET /api/devices/{id}` の `history` から状態・計測履歴を取得できる。Androidアプリ・Web画面のコードは別リポジトリの担当。
 
 ## 送信する手順
 
 1. [端末登録](android-key-registration.md) を完了し、アクセストークンとAndroid Keystoreの鍵エイリアスを保持する。
-2. `POST /api/devices/lookup` にBearerトークンと `{"imei":"..."}` を送る。応答の登録済みの `imei`、`key_id`、`next_sequence`、`previous_hash` を使う。署名対象にも同じ登録IMEIを入れる。
+2. `POST /api/devices/lookup` にBearerトークンと `{"device_id":"<登録応答のUUID>"}` を送る。応答の登録済みの `device_id`、`key_id`、`next_sequence`、`previous_hash` を使う。署名対象にも同じ端末UUIDを入れる。
 3. 下記のpayloadを作り、RFC 8785 JCSで正規化する。未取得の値も省略せず `null` にする。`spec` と `status` は片方だけをオブジェクトにする。
 4. 正規化した文字列のUTF-8バイト列を、その鍵の `SHA256withECDSA` で署名する。返されるASN.1 DER署名を標準Base64へ変換し、正規化文字列とともに送る。ハッシュを先に渡して二重にSHA-256をかけない。
 5. 応答を受け取るまでは同じ正規化文字列・同じ署名を保持する。通信結果が不明なときはその2つをそのまま再送する。受理後に次の連番・前ハッシュへ進める。
 
 ```http
-POST /api/devices/490154203237518/logs
+POST /api/devices/22222222-2222-4222-8222-222222222222/logs
 Authorization: Bearer <access_token>
 Content-Type: application/json
 
@@ -26,7 +26,7 @@ Content-Type: application/json
 ```json
 {
   "schema_version": 1,
-  "imei": "490154203237518",
+  "device_id": "22222222-2222-4222-8222-222222222222",
   "key_id": "11111111-1111-4111-8111-111111111111",
   "sequence": 1,
   "type": "status",
@@ -65,8 +65,8 @@ Content-Type: application/json
 ## 形式と検証
 
 - JCSは [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) に従う。[Go実装](https://github.com/cyberphone/json-canonicalization/tree/master/go) を固定バージョンで使用する。単なるJSONキーのソートとは区別する。
-- `schema_version` は1。`type` は `spec` / `status`。`inspection` は受け付けない。全フィールドを含め、NULLはJSONの `null` とする。重複キー、未知の項目、不正Unicode、過度のネスト、正規化されていない文字列は400。
-- 署名には `key_id` とIMEI・連番・時刻・前ハッシュ・計測値の全体を含める。サーバーが正本のSHA-256を計算するため、別のハッシュ値は送らない。
+- `schema_version` は1。IMEIを含む形式は受け付けない。`type` は `spec` / `status`。`inspection` は受け付けない。全フィールドを含め、NULLはJSONの `null` とする。重複キー、未知の項目、不正Unicode、過度のネスト、正規化されていない文字列は400。
+- 署名には `key_id` と `device_id`・連番・時刻・前ハッシュ・計測値の全体を含める。サーバーが正本のSHA-256を計算するため、別のハッシュ値は送らない。
 - `collected_at` はUTCのRFC 3339。小数秒は最大6桁で不要な末尾0を省く。1970年以降、サーバー現在時刻の5分後まで。過去のオフライン計測も受け付けるが、失効した鍵による新規送信は拒否する。
 - 連番は端末全体で1から続き、所有者交代・鍵交換でもリセットしない。1件目だけ `previous_hash: null`。それ以降は直前の正本のSHA-256小文字hex64桁を指定する。連番は1〜9007199254740990、容量bytesは1〜9007199254740991。
 - メーカー・モデルは1〜128 UTF-8 bytes、SoCはnullまたは1〜128 bytes。OSバージョンは1〜64 bytes。前後の空白と制御文字は拒否する。個人が設定した端末名、所有者ID、認証情報、attestation、自由記述は送れない。
@@ -80,7 +80,7 @@ Content-Type: application/json
 
 ```json
 {
-  "imei": "490154203237518",
+  "device_id": "22222222-2222-4222-8222-222222222222",
   "sequence": 1,
   "payload_hash": "<正本のSHA-256小文字hex64桁>",
   "received_at": "2026-11-05T09:00:00Z",
@@ -95,10 +95,10 @@ Content-Type: application/json
 
 409は連番の飛び・前ハッシュの不一致・同一連番への異なる送信。端末検索で現在の `next_sequence` / `previous_hash` を確認し、保存済みの送信と矛盾していないか調べる。古い送信を異なる内容で上書きしない。401では認証情報を確認し、403では現在の鍵と署名形式を確認する。
 
-売却時は [登録終了API](device-registration.md#現在の登録者による手動失効) を使う。次の持ち主は新しく登録して、同じ登録IMEIの次の連番・前ハッシュを引き継ぐ。過去の状態・計測履歴は引き続き公開取得できる。旧持ち主の認証情報と鍵は無効。
+売却時は [登録終了API](device-registration.md#現在の登録者による手動失効) を使う。次の持ち主は新しく登録して、同じ端末UUIDの次の連番・前ハッシュを引き継ぐ。過去の状態・計測履歴は引き続き公開取得できる。旧持ち主の認証情報と鍵は無効。
 
 ## 共通テストデータと範囲
 
-[署名ベクタ](examples/measurement-vector.json) にはpayload・JCS正本・SHA-256・公開鍵・DER署名を含め、Goで検証する。[送信本文](examples/measurement-request.json) と [正規化ベクタ](examples/jcs-vectors.json) はAndroid・ブラウザ実装でも同じ結果になるか確認するための素材。署名ベクタの鍵はテスト専用で、本番の端末登録には使わない。サンプルのIMEI・鍵IDを送っても、その鍵が現在の登録鍵でなければ拒否される。
+[署名ベクタ](examples/measurement-vector.json) にはpayload・JCS正本・SHA-256・公開鍵・DER署名を含め、Goで検証する。[送信本文](examples/measurement-request.json) と [正規化ベクタ](examples/jcs-vectors.json) はAndroid・ブラウザ実装でも同じ結果になるか確認するための素材。署名ベクタの鍵はテスト専用で、本番の端末登録には使わない。サンプルの端末UUID・鍵IDを送っても、その鍵が現在の登録鍵でなければ拒否される。
 
 このAPIは署名検証・正本と投影の保存を担当する。保存後は最新証明書表示と `/api/devices/{id}/records` に自動で反映される。発行操作は不要。評価算出・チェーン送信は未実装。

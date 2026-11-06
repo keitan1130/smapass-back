@@ -31,15 +31,15 @@ type EnrollmentChallengeRequest struct {
 	IMEI string `json:"imei"`
 }
 type RotationChallengeRequest struct {
-	IMEI string `json:"imei"`
+	DeviceID string `json:"device_id"`
 }
 
 // ChallengeContext and VerifiedKey are internal; they must never be bound from JSON.
 type ChallengeContext struct {
-	ID, IMEI, Purpose, InstallationID string
-	Nonce, Payload                    []byte
-	ExpiresAt                         time.Time
-	ConsumedAt                        *time.Time
+	ID, IMEI, DeviceID, Purpose, InstallationID string
+	Nonce, Payload                              []byte
+	ExpiresAt                                   time.Time
+	ConsumedAt                                  *time.Time
 }
 
 type VerifiedKey struct {

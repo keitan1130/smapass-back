@@ -63,7 +63,7 @@ func measurementSession(t *testing.T, db *bun.DB, imei string) (*entity.TokenPai
 	if err != nil {
 		t.Fatal(err)
 	}
-	device, err := NewRepository(db).FindOwned(ctx, p, imei)
+	device, err := NewRepository(db).FindOwned(ctx, p, p.DeviceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		response := request("/api/devices/"+device.IMEI+"/logs", tokens.AccessToken, body, status)
+		response := request("/api/devices/"+device.DeviceID+"/logs", tokens.AccessToken, body, status)
 		var receipt entity.MeasurementReceipt
 		if status < 300 {
 			if err := json.Unmarshal(response, &receipt); err != nil {
@@ -137,12 +137,12 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 		}
 		return at
 	}
-	path := "/api/devices/" + device.IMEI + "/logs"
+	path := "/api/devices/" + device.DeviceID + "/logs"
 	request(path, "", []byte(`{}`), 401)
 	request(path, tokens.AccessToken, []byte(`{"canonical_payload":"a","canonical_payload":"b"}`), 400)
 	request(path, tokens.AccessToken, []byte(strings.Repeat(" ", 128<<10+1)), 413)
-	request("/api/devices/000000000094821/logs", tokens.AccessToken, []byte(`{}`), 400)
-	payload := entity.MeasurementPayload{SchemaVersion: 1, IMEI: device.IMEI, KeyID: device.KeyID, Sequence: 1, Type: "spec",
+	request("/api/devices/"+publicID(t, db, "000000000094821")+"/logs", tokens.AccessToken, []byte(`{}`), 400)
+	payload := entity.MeasurementPayload{SchemaVersion: 1, DeviceID: device.DeviceID, KeyID: device.KeyID, Sequence: 1, Type: "spec",
 		CollectedAt: time.Now().UTC().Truncate(time.Millisecond), Spec: &entity.SpecMeasurement{Manufacturer: "Google", Model: "Pixel 8"}}
 	// Three inactive days permit a transfer, but do not revoke the original
 	// installation. It can refresh expired access credentials and resume logging
@@ -164,18 +164,18 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	dormant, err := r.FindOwned(ctx, p, device.IMEI)
+	dormant, err := r.FindOwned(ctx, p, device.DeviceID)
 	if err != nil || dormant.OwnershipID != device.OwnershipID || dormant.ReclaimableAt.After(time.Now()) {
 		t.Fatalf("original registration lost or refresh extended inactivity: %+v %v", dormant, err)
 	}
 	firstInput := signedMeasurement(t, key, payload)
 	first := send(firstInput, 201)
-	resumed, err := r.FindOwned(ctx, p, device.IMEI)
+	resumed, err := r.FindOwned(ctx, p, device.DeviceID)
 	if err != nil || resumed.OwnershipID != device.OwnershipID || resumed.LastVerifiedLogAt == nil ||
 		!resumed.LastVerifiedLogAt.Equal(first.ReceivedAt) || !resumed.ReclaimableAt.Equal(first.ReceivedAt.Add(72*time.Hour)) {
 		t.Fatalf("resumed communication did not renew the original registration: %+v %v", resumed, err)
 	}
-	if _, err := a.Enroll(ctx, testutil.Enrollment(t, db, device.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err := a.Enroll(ctx, testutil.ReEnrollment(t, db, device.DeviceID)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("transfer allowed after the original installation resumed: %v", err)
 	}
 	before := activity()
@@ -186,19 +186,34 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 		t.Fatal("retry changed evidence or registration activity")
 	}
 	body, _ := json.Marshal(firstInput)
-	request("/api/devices/000000000094821/logs", tokens.AccessToken, body, 404)
+	request("/api/devices/"+publicID(t, db, "000000000094821")+"/logs", tokens.AccessToken, body, 404)
 	temperature, thermal := 32.3, 0.3123456789012345
 	charge, fullCharge := 3200, 4400
 	payload.Sequence, payload.Type, payload.Spec, payload.PreviousHash = 2, "status", nil, &first.PayloadHash
 	payload.Status = &entity.StatusMeasurement{OSVersion: "16", SDKInt: 36, BatteryTempC: &temperature, BatteryChargeMAh: &charge, BatteryFullChargeMAh: &fullCharge, ThermalHeadroom: &thermal}
+	differentDevice := payload
+	differentDevice.DeviceID = publicID(t, db, "000000000094821")
+	send(signedMeasurement(t, key, differentDevice), 400)
 	secondInput := signedMeasurement(t, key, payload)
 	second := send(secondInput, 201)
-	state, err := r.FindState(ctx, publicID(t, db, device.IMEI), 100, 0)
+	state, err := r.FindState(ctx, device.DeviceID, 100, 0)
 	if err != nil || state.RecordCount != 2 || state.Spec == nil || state.Spec.Model != "Pixel 8" || state.Status == nil || state.Status.BatteryTempC == nil || *state.Status.BatteryTempC != temperature || state.Status.ThermalHeadroom == nil || *state.Status.ThermalHeadroom != thermal || state.Status.HadAbnormalExit != nil {
 		t.Fatalf("stored projection: %+v %v", state, err)
 	}
-	if rows, total, err := historyPage(t, ctx, r, publicID(t, db, device.IMEI), 100, 0); err != nil || total != 1 || len(rows) != 1 || rows[0].BatteryFullChargeMAh == nil || *rows[0].BatteryFullChargeMAh != fullCharge {
+	if rows, total, err := historyPage(t, ctx, r, device.DeviceID, 100, 0); err != nil || total != 1 || len(rows) != 1 || rows[0].BatteryFullChargeMAh == nil || *rows[0].BatteryFullChargeMAh != fullCharge {
 		t.Fatalf("history: %+v %d %v", rows, total, err)
+	}
+	evidenceResponse := httptest.NewRecorder()
+	app.ServeHTTP(evidenceResponse, httptest.NewRequest(http.MethodGet, "/api/devices/"+device.DeviceID+"/records", nil))
+	var evidence struct {
+		Items []entity.VerificationRecord `json:"items"`
+	}
+	if evidenceResponse.Code != 200 || json.Unmarshal(evidenceResponse.Body.Bytes(), &evidence) != nil || len(evidence.Items) != 2 {
+		t.Fatalf("public evidence response: %d %s", evidenceResponse.Code, evidenceResponse.Body.String())
+	}
+	if evidence.Items[1].CanonicalPayload != secondInput.CanonicalPayload || evidence.Items[1].PayloadHash != second.PayloadHash ||
+		strings.Contains(evidenceResponse.Body.String(), "490154203237518") || strings.Contains(evidence.Items[1].CanonicalPayload, `"imei"`) {
+		t.Fatal("public evidence changed original bytes or exposed IMEI")
 	}
 	before = activity()
 	payload.Sequence, payload.PreviousHash = 3, &second.PayloadHash
@@ -223,7 +238,7 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	}
 	payload.Sequence, payload.PreviousHash, payload.Status.OSVersion = 3, &second.PayloadHash, "reject-fixture"
 	send(signedMeasurement(t, key, payload), 500)
-	if state, err := r.FindState(ctx, publicID(t, db, device.IMEI), 100, 0); err != nil || state.RecordCount != 2 || !activity().Equal(before) {
+	if state, err := r.FindState(ctx, device.DeviceID, 100, 0); err != nil || state.RecordCount != 2 || !activity().Equal(before) {
 		t.Fatalf("partial write: %+v %v", state, err)
 	}
 	payload.Status.OSVersion = "16"
@@ -234,7 +249,7 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 		Signature           []byte
 		SignatureVerifiedAt *time.Time
 	}
-	if err := db.NewRaw("SELECT canonical_payload,payload_hash,signature,signature_verified_at FROM device_logs WHERE imei=? AND seq=2", device.IMEI).Scan(ctx, &stored); err != nil {
+	if err := db.NewRaw("SELECT canonical_payload,payload_hash,signature,signature_verified_at FROM device_logs WHERE device_id=? AND seq=2", device.DeviceID).Scan(ctx, &stored); err != nil {
 		t.Fatal(err)
 	}
 	wantHash := sha256.Sum256([]byte(secondInput.CanonicalPayload))
@@ -242,11 +257,11 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	if stored.CanonicalPayload != secondInput.CanonicalPayload || !bytes.Equal(stored.PayloadHash, wantHash[:]) || !bytes.Equal(stored.Signature, wantSignature) || stored.SignatureVerifiedAt == nil {
 		t.Fatal("signed original changed or verification missing")
 	}
-	if err := u.Revoke(ctx, p, device.IMEI); err != nil {
+	if err := u.Revoke(ctx, p, device.DeviceID); err != nil {
 		t.Fatal(err)
 	}
 	send(secondInput, 401)
-	tokens, p, device, newKey := measurementSession(t, db, payload.IMEI)
+	tokens, p, device, newKey := measurementSession(t, db, "490154203237518")
 	if device.NextSequence != 4 || device.PreviousHash == nil || *device.PreviousHash != third.PayloadHash {
 		t.Fatal("transfer reset the chain")
 	}
@@ -254,14 +269,14 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	send(signedMeasurement(t, key, payload), 403)
 	payload.KeyID = device.KeyID
 	fourth := send(signedMeasurement(t, newKey, payload), 201)
-	if rows, total, err := historyPage(t, ctx, r, publicID(t, db, device.IMEI), 100, 0); err != nil || total != 3 || len(rows) != 3 {
+	if rows, total, err := historyPage(t, ctx, r, device.DeviceID, 100, 0); err != nil || total != 3 || len(rows) != 3 {
 		t.Fatalf("lifetime history: %d %d %v", len(rows), total, err)
 	}
 	if _, err := a.Refresh(ctx, entity.RefreshRequest{RefreshToken: tokens.RefreshToken}); err != nil {
 		t.Fatal(err)
 	}
 	payload.Sequence, payload.PreviousHash = 5, &fourth.PayloadHash
-	if _, err := u.Ingest(ctx, p, device.IMEI, signedMeasurement(t, newKey, payload)); !errors.Is(err, entity.ErrUnauthenticated) {
+	if _, err := u.Ingest(ctx, p, device.DeviceID, signedMeasurement(t, newKey, payload)); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("stale in-flight credentials accepted: %v", err)
 	}
 }
@@ -271,14 +286,19 @@ func TestConcurrentMeasurementRetryIsSavedOnce(t *testing.T) {
 	ctx := context.Background()
 	_, p, device, key := measurementSession(t, db, "490154203237518")
 	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
-	input := signedMeasurement(t, key, entity.MeasurementPayload{SchemaVersion: 1, IMEI: device.IMEI, KeyID: device.KeyID, Sequence: 1, Type: "status",
+	input := signedMeasurement(t, key, entity.MeasurementPayload{SchemaVersion: 1, DeviceID: device.DeviceID, KeyID: device.KeyID, Sequence: 1, Type: "status",
 		CollectedAt: time.Now().UTC().Truncate(time.Millisecond), Status: &entity.StatusMeasurement{OSVersion: "16", SDKInt: 36}})
 	var wg sync.WaitGroup
 	results := make(chan *entity.MeasurementReceipt, 2)
 	errors := make(chan error, 2)
 	for range 2 {
 		wg.Add(1)
-		go func() { defer wg.Done(); r, err := u.Ingest(ctx, p, device.IMEI, input); results <- r; errors <- err }()
+		go func() {
+			defer wg.Done()
+			r, err := u.Ingest(ctx, p, device.DeviceID, input)
+			results <- r
+			errors <- err
+		}()
 	}
 	wg.Wait()
 	duplicates := 0
@@ -290,7 +310,7 @@ func TestConcurrentMeasurementRetryIsSavedOnce(t *testing.T) {
 			duplicates++
 		}
 	}
-	state, err := NewRepository(db).FindState(ctx, publicID(t, db, device.IMEI), 100, 0)
+	state, err := NewRepository(db).FindState(ctx, device.DeviceID, 100, 0)
 	if err != nil || duplicates != 1 || state.RecordCount != 1 {
 		t.Fatalf("concurrent retry duplicated records: %+v %d %v", state, duplicates, err)
 	}

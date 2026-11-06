@@ -19,12 +19,12 @@ func (r *Repository) Records(ctx context.Context, id string, limit, offset int) 
 	return items, total, err
 }
 func readRecords(ctx context.Context, tx bun.IDB, id string, limit, offset int) ([]entity.VerificationRecord, int, error) {
-	primary, err := imeiByID(ctx, tx, id)
+	deviceID, err := requireDeviceID(ctx, tx, id)
 	if err != nil {
 		return nil, 0, err
 	}
 	var total int
-	err = tx.NewRaw(`SELECT count(*) FROM device_logs l WHERE l.imei=?`, primary).Scan(ctx, &total)
+	err = tx.NewRaw(`SELECT count(*) FROM device_logs l WHERE l.device_id=?`, deviceID).Scan(ctx, &total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -37,7 +37,7 @@ func readRecords(ctx context.Context, tx bun.IDB, id string, limit, offset int) 
 		JOIN device_keys k ON k.id = l.key_id
 		LEFT JOIN log_anchors la ON la.log_id = l.id
 		LEFT JOIN anchors a ON a.id = la.anchor_id
-		WHERE l.imei = ? ORDER BY l.seq ASC LIMIT ? OFFSET ?`, primary, limit, offset)
+		WHERE l.device_id = ? ORDER BY l.seq ASC LIMIT ? OFFSET ?`, deviceID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
