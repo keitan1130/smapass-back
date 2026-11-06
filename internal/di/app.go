@@ -8,7 +8,6 @@ import (
 	"smapass-back/internal/infrastructure/auth"
 	"smapass-back/internal/infrastructure/config"
 	authdatabase "smapass-back/internal/infrastructure/database/auth"
-	"smapass-back/internal/infrastructure/database/certificate"
 	"smapass-back/internal/infrastructure/database/device"
 	"smapass-back/internal/infrastructure/database/keychallenge"
 	"smapass-back/internal/infrastructure/router"
@@ -23,10 +22,8 @@ func InitializeApp(ctx context.Context, cfg config.Config) (*echo.Echo, func(), 
 	if err != nil {
 		return nil, nil, err
 	}
-	repo := certificate.NewRepository(database)
-	certificates := controller.NewCertificateController(usecase.NewCertificateUsecase(repo))
 	health := controller.NewHealthController(usecase.NewHealthUsecase(database))
-	app := router.New(certificates, health, cfg.CORSOrigins)
+	app := router.New(health, cfg.CORSOrigins)
 	verifier, err := attestation.NewVerifier(attestation.Policy{PackageName: cfg.AttestationPackage, SigningDigests: cfg.AttestationDigests, RequireIMEI: cfg.AttestationRequireIMEI}, attestation.NewGoogleStatus())
 	if err != nil {
 		_ = database.Close()
@@ -36,6 +33,6 @@ func InitializeApp(ctx context.Context, cfg config.Config) (*echo.Echo, func(), 
 	authUsecase := usecase.NewAuthUsecase(authdatabase.NewRepository(database), keys)
 	authenticate := auth.Middleware(authUsecase.Authenticate)
 	router.AddDeviceRoutes(app, controller.NewDeviceController(usecase.NewDeviceUsecase(device.NewRepository(database), keys)), authenticate)
-	router.AddAuthRoutes(app, controller.NewAuthController(authUsecase), certificates, authenticate)
+	router.AddAuthRoutes(app, controller.NewAuthController(authUsecase))
 	return app, func() { _ = database.Close() }, nil
 }

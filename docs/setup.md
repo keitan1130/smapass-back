@@ -27,10 +27,7 @@ curl -f http://localhost:8080/ready
 
 ```bash
 docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/seeds/development.sql
-curl -f http://localhost:8080/api/certificates/000000000094821
-curl -f http://localhost:8080/certificates/000000000094821
-curl -f 'http://localhost:8080/api/certificates?imeis=000000000094821'
-curl -f 'http://localhost:8080/api/certificates/000000000094821/records?limit=2&offset=0'
+curl -f 'http://localhost:8080/api/devices/search?imeis=000000000094821'
 ```
 
 デモ投入は登録者を変更する前なら繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
@@ -113,7 +110,7 @@ make test-integration
 
 DB 統合テストは通常テストから分けている。Testcontainers がテストごとに PostgreSQL 18.6 を新規起動し、現行マイグレーションとテスト用データを投入する。接続ポートは自動で選び、終わったらコンテナを削除する。通常の Compose、`.env`、`TEST_DB_DSN` は使わず、事前の DB 準備も不要。
 
-証明書・出品先・ページング・28件のハッシュと前ハッシュ、正本とスナップショットの更新拒否、IMEI の登録・検索・3日ルール・手動失効・同時登録、トークン付き HTTP 入出力・認証情報のローテーション・再利用検知・失効、旧 UUID からの移行を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
+最新情報・全期間の履歴・一括取得・ページング・28件のハッシュと前ハッシュ、正本の更新拒否と旧スキーマからの移行、IMEI の登録・検索・3日ルール・手動失効・同時登録、トークン付き HTTP 入出力・認証情報のローテーション・再利用検知・失効、旧 UUID からの移行を確認する。実署名やチェーンの正しさは確認しない。Docker を使えない環境では通常テストまで実行できる。全コマンドと CI の対応は [development.md](development.md)。
 
 ## よくある問題
 
@@ -128,3 +125,7 @@ DB 統合テストは通常テストから分けている。Testcontainers が�
 | ブラウザだけ CORS エラー | Web の Origin が `CORS_ORIGINS` に含まれるか。Origin は scheme / host / port の完全一致 |
 
 attestation 設定がない場合は公開参照が動き、チャレンジ・初回登録・鍵交換は503になる。設定例・検証条件と Android 側の処理は [Android 鍵登録](android-key-registration.md) を参照。両設定は実際の APK に合わせ、例示のパッケージ名を許可値にしない。
+
+マイグレーションは [db/README.md](../db/README.md) を参照。新規DBは初期定義1本。旧DBへの自動適用は拒否する。既存DBを使い続ける場合はバックアップと別途移送手順が必要。
+
+検索結果の `id` を使い、`/api/devices/{id}?limit=2`、`/api/devices?ids={id}`、`/api/devices/{id}/records` を取得する。

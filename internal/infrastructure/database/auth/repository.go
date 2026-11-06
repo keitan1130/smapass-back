@@ -37,7 +37,7 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 			return err
 		}
 		if errors.Is(err, sql.ErrNoRows) {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO devices (imei,imei_suffix) VALUES (?,?)", imei, imei[11:]); err != nil {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO devices (imei) VALUES (?)", imei); err != nil {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, "INSERT INTO device_imei_aliases (imei,primary_imei) VALUES (?,?)", imei, imei); err != nil {

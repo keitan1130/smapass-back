@@ -40,11 +40,14 @@ func run() error {
 	m.LockTimeout = 30 * time.Second
 	switch os.Args[1] {
 	case "up":
-		if err = preflightIMEI(dsn); err != nil {
+		if err = preflightBaseline(dsn); err != nil {
 			return err
 		}
 		err = m.Up()
 	case "down-one":
+		if err = preflightBaseline(dsn); err != nil {
+			return err
+		}
 		err = m.Steps(-1)
 	case "version":
 		var version uint

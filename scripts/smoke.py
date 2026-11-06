@@ -16,29 +16,24 @@ def main():
         if get(path) != {"status": "ok"}:
             raise RuntimeError(f"Unexpected health response: {path}")
 
-    certificate = get("/api/certificates/000000000094821")
-    if not certificate["is_demo"] or certificate["snapshot"]["recording"]["count"] != 28:
-        raise RuntimeError("Unexpected development certificate; run make seed")
-
-    if any(field in certificate for field in ("id", "number", "successor_number", "successor_id")):
-        raise RuntimeError("Public certificate exposed an internal certificate identifier")
-
-    current = get("/certificates/000000000094821")
-    if current != certificate:
-        raise RuntimeError("IMEI public route returned a different certificate")
-
-    state = get("/api/devices/000000000094821")
-    if state["record_count"] != 28 or state["status"]["sequence"] != 28:
-        raise RuntimeError("Unexpected public lifetime device state")
-    history = get("/api/devices/000000000094821/history?limit=2")
-    if history["total"] != 28 or len(history["items"]) != 2:
-        raise RuntimeError("Unexpected lifetime status history")
-
-    records = get("/api/certificates/000000000094821/records?limit=2")
+    refs = get("/api/devices/search?imeis=000000000094821")["items"]
+    if len(refs) != 1:
+        raise RuntimeError("Demo device missing; run make seed")
+    device_id = refs[0]["id"]
+    state = get(f"/api/devices/{device_id}?limit=2")
+    if not state["is_demo"] or state["record_count"] != 28 or state["status"]["sequence"] != 28:
+        raise RuntimeError("Unexpected live demo state")
+    if state["history"]["total"] != 28 or len(state["history"]["items"]) != 2:
+        raise RuntimeError("Unexpected history page")
+    if any(field in state for field in ("imei", "imeis", "ownership_id")):
+        raise RuntimeError("Display response exposed IMEI or private registration data")
+    summaries = get(f"/api/devices?ids={device_id}")["items"]
+    if len(summaries) != 1 or "history" in summaries[0] or "imei" in summaries[0]:
+        raise RuntimeError("Unexpected batch summaries")
+    records = get(f"/api/devices/{device_id}/records?limit=2")
     if records["total"] != 28 or len(records["items"]) != 2:
         raise RuntimeError("Unexpected evidence page")
-
-    print("API smoke checks passed: health, DB readiness, demo certificate, evidence page")
+    print("API smoke checks passed: search, UUID display, history, summaries, evidence")
 
 
 if __name__ == "__main__":

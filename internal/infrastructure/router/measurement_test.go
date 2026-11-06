@@ -71,7 +71,7 @@ func TestMeasurementRouteAuthenticationParsingAndReceipts(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repo := &measurementRepository{publicKey: key.PublicKey, duplicate: test.duplicate, err: test.repositoryError}
-			app := New(controller.NewCertificateController(nil), controller.NewHealthController(nil), nil)
+			app := New(controller.NewHealthController(nil), nil)
 			AddDeviceRoutes(app, controller.NewDeviceController(usecase.NewDeviceUsecase(repo, nil)), func(next echo.HandlerFunc) echo.HandlerFunc {
 				return func(c *echo.Context) error {
 					if !test.authenticated {

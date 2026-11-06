@@ -14,7 +14,6 @@ import (
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
 	authdb "smapass-back/internal/infrastructure/database/auth"
-	"smapass-back/internal/infrastructure/database/certificate"
 	"smapass-back/internal/infrastructure/database/testutil"
 	"smapass-back/internal/usecase"
 )
@@ -25,6 +24,10 @@ func input(t *testing.T, db *bun.DB, p entity.Principal, imeis ...string) entity
 }
 
 func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool) error {
+	return insertLogAt(ctx, db, device, seq, verified, time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+}
+
+func insertLogAt(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool, collectedAt time.Time) error {
 	var marker any
 	if verified {
 		marker = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -33,9 +36,9 @@ func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, 
 	_, err := db.ExecContext(ctx, `INSERT INTO device_logs (imei, ownership_id, key_id, seq, type,
 		canonicalization, canonical_payload, payload, payload_hash, prev_hash, signature, collected_at, received_at, signature_verified_at)
 		VALUES (?, ?, ?, ?, 'status', 'test', ?, ?::jsonb, sha256(convert_to(?, 'UTF8')),
-		(SELECT payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), '2000-01-01', '2000-01-01', ?)`,
+		(SELECT payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), ?, '2000-01-01', ?)`,
 		device.IMEI, device.OwnershipID, device.KeyID, seq, `{"seq":`+strconv.Itoa(seq)+`}`, `{"seq":`+strconv.Itoa(seq)+`}`,
-		`{"seq":`+strconv.Itoa(seq)+`}`, device.IMEI, marker)
+		`{"seq":`+strconv.Itoa(seq)+`}`, device.IMEI, collectedAt, marker)
 	return err
 }
 
@@ -182,31 +185,16 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 func TestPublicHistoryContinuesAcrossOwners(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
-	certs := certificate.NewRepository(db)
-	before, err := certs.FindLatestByIMEI(ctx, "000000000094821")
-	if err != nil {
-		t.Fatal(err)
+	records := NewRepository(db)
+	before, total, err := records.Records(ctx, publicID(t, db, "000000000094821"), 100, 0)
+	if err != nil || total != 28 {
+		t.Fatalf("initial evidence: %d %v", total, err)
 	}
-	credentials(t, db, before.IMEI)
-	after, err := certs.FindLatestByIMEI(ctx, before.IMEI)
-	if err != nil || after.ID != before.ID || after.Listing != nil {
-		t.Fatalf("public history interrupted or old listing exposed: %v", err)
+	credentials(t, db, "000000000094821")
+	after, total, err := records.Records(ctx, publicID(t, db, "000000000094821"), 100, 0)
+	if err != nil || total != 28 || len(after) != 28 || after[0].PayloadHash != before[0].PayloadHash {
+		t.Fatalf("evidence changed after transfer: %d %v", total, err)
 	}
-	var oldStatus string
-	if err := db.NewRaw("SELECT status FROM certificates WHERE id=?", before.ID).Scan(ctx, &oldStatus); err != nil || oldStatus != "valid" {
-		t.Fatalf("history lost: %v", err)
-	}
-}
-
-// A fixture certificate is created directly; this does not implement certificate issuance or signature verification.
-func fixtureCertificate(t *testing.T, db *bun.DB, device *entity.Device) string {
-	t.Helper()
-	var id string
-	err := db.NewRaw("INSERT INTO certificates (imei,ownership_id,issued_at,is_demo,snapshot) VALUES (?,?,clock_timestamp(),true,'{}') RETURNING id", device.IMEI, device.OwnershipID).Scan(context.Background(), &id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return id
 }
 
 func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
@@ -221,15 +209,6 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if err = insertLog(ctx, db, first, 1, true); err != nil {
 		t.Fatal(err)
 	}
-	id := fixtureCertificate(t, db, first)
-	if _, err = db.ExecContext(ctx, "INSERT INTO certificate_logs (certificate_id,imei,log_id) SELECT ?,imei,id FROM device_logs WHERE imei=?", id, a.IMEI); err != nil {
-		t.Fatal(err)
-	}
-	certs := certificate.NewRepository(db)
-	before, err := certs.FindLatestByIMEI(ctx, a.IMEI)
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, _, other := credentials(t, db, "000000000094821")
 	if err = u.Revoke(ctx, other, a.IMEI); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation revoked: %v", err)
@@ -240,18 +219,9 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("revoked installation authenticated: %v", err)
 	}
-	var historical struct {
-		Status   string
-		IssuedAt time.Time
-	}
-	err = db.NewRaw("SELECT status, issued_at FROM certificates WHERE id=?", id).Scan(ctx, &historical)
-	if err != nil || historical.Status != "valid" || !historical.IssuedAt.Equal(before.IssuedAt) {
-		t.Fatalf("history lost: %v", err)
-	}
-	var count int
-	err = db.NewRaw("SELECT count(*) FROM certificate_logs WHERE certificate_id=?", id).Scan(ctx, &count)
-	if err != nil || count != 1 {
-		t.Fatalf("evidence lost: %d %v", count, err)
+	items, total, err := NewRepository(db).Records(ctx, publicID(t, db, a.IMEI), 100, 0)
+	if err != nil || total != 1 || len(items) != 1 {
+		t.Fatalf("evidence lost on release: %d %v", total, err)
 	}
 	if err = insertLog(ctx, db, first, 2, true); err == nil {
 		t.Fatal("revoked key accepted")

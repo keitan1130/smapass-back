@@ -16,7 +16,7 @@ import (
 func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Principal, imei string, log *entity.MeasurementLog) (*entity.MeasurementReceipt, error) {
 	var result *entity.MeasurementReceipt
 	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		primary, err := publicPrimary(ctx, tx, imei)
+		primary, err := primaryIMEIByAlias(ctx, tx, imei)
 		if err != nil {
 			return err
 		}

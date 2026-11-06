@@ -15,7 +15,7 @@ import (
 	"smapass-back/internal/interface/schema"
 )
 
-func New(certificates *controller.CertificateController, health *controller.HealthController, origins []string) *echo.Echo {
+func New(health *controller.HealthController, origins []string) *echo.Echo {
 	e := echo.New()
 	e.IPExtractor = echo.ExtractIPDirect()
 	e.SchemeExtractor = echo.ExtractSchemeDirect()
@@ -36,11 +36,6 @@ func New(certificates *controller.CertificateController, health *controller.Heal
 	}
 	e.GET("/health", health.Live)
 	e.GET("/ready", health.Ready)
-	api := e.Group("/api", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(10)))
-	api.GET("/certificates", certificates.List)
-	api.GET("/certificates/:imei", certificates.Get)
-	api.GET("/certificates/:imei/records", certificates.Records)
-	e.GET("/certificates/:imei", certificates.CurrentByIMEI, middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(10)))
 	return e
 }
 
@@ -57,24 +52,25 @@ func apiPolicy(next echo.HandlerFunc) echo.HandlerFunc {
 
 func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authenticate echo.MiddlewareFunc) {
 	public := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(10)))
-	public.GET("/:imei", devices.State)
-	public.GET("/:imei/history", devices.History)
-	g := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
-	g.POST("", devices.Register)
-	g.POST("/key-challenges", devices.Challenge)
-	g.POST("/lookup", devices.Lookup)
-	g.POST("/:imei/revoke", devices.Revoke)
-	g.POST("/:imei/logs", devices.Ingest)
+	public.GET("", devices.List)
+	public.GET("/search", devices.Search)
+	public.GET("/:id", devices.State)
+	public.GET("/:id/records", devices.Records)
+	// Authenticate concrete writes, not the group's fallback for unknown URLs.
+	g := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)))
+	g.POST("", devices.Register, authenticate)
+	g.POST("/key-challenges", devices.Challenge, authenticate)
+	g.POST("/lookup", devices.Lookup, authenticate)
+	g.POST("/:imei/revoke", devices.Revoke, authenticate)
+	g.POST("/:imei/logs", devices.Ingest, authenticate)
 }
 
-func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController, certificates *controller.CertificateController, authenticate echo.MiddlewareFunc) {
+func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController) {
 	g := e.Group("/api/auth", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(2)))
 	g.POST("/devices", auth.Enroll)
 	g.POST("/challenges", auth.Challenge)
 	g.POST("/refresh", auth.Refresh)
 	g.POST("/revoke", auth.Revoke)
-	g.GET("/session", auth.Session, authenticate)
-	e.POST("/api/certificates/:imei/revoke", certificates.Revoke, middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
 }
 
 func writeError(c *echo.Context, err error) {
@@ -99,8 +95,8 @@ func writeError(c *echo.Context, err error) {
 		status, code, message = 409, "invalid_challenge", "registration challenge invalid, expired or already used"
 	case errors.Is(err, entity.ErrUnauthenticated):
 		status, code, message = 401, "unauthorized", "valid device credentials required"
-	case errors.Is(err, entity.ErrCertificateState):
-		status, code, message = 409, "certificate_has_successor", "certificate has a successor"
+	case errors.Is(err, entity.ErrInvalidDeviceID):
+		status, code, message = 400, "invalid_id", "valid device UUID required"
 	case errors.Is(err, entity.ErrInvalidDevice):
 		status, code, message = 400, "invalid_device", "valid IMEIs and a P-256 public key are required"
 	case errors.Is(err, entity.ErrDeviceInUse):

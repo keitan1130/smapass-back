@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 	"smapass-back/internal/domain/entity"
@@ -121,21 +122,41 @@ func (c *DeviceController) Revoke(ctx *echo.Context) error {
 }
 
 func (c *DeviceController) State(ctx *echo.Context) error {
-	result, err := c.usecase.State(ctx.Request().Context(), ctx.Param("imei"))
+	limit, offset, err := pagination(ctx)
+	if err != nil {
+		return err
+	}
+	result, err := c.usecase.State(ctx.Request().Context(), ctx.Param("id"), limit, offset)
 	if err != nil {
 		return err
 	}
 	return ctx.JSON(http.StatusOK, result)
 }
 
-func (c *DeviceController) History(ctx *echo.Context) error {
+func (c *DeviceController) Records(ctx *echo.Context) error {
 	limit, offset, err := pagination(ctx)
 	if err != nil {
 		return err
 	}
-	items, total, err := c.usecase.History(ctx.Request().Context(), ctx.Param("imei"), limit, offset)
+	items, total, err := c.usecase.Records(ctx.Request().Context(), ctx.Param("id"), limit, offset)
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(http.StatusOK, schema.StatusHistory{Items: items, Total: total, Limit: limit, Offset: offset})
+	return ctx.JSON(http.StatusOK, schema.Records{Items: items, Total: total, Limit: limit, Offset: offset})
+}
+
+func (c *DeviceController) List(ctx *echo.Context) error {
+	items, err := c.usecase.List(ctx.Request().Context(), strings.Split(ctx.QueryParam("ids"), ","))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, schema.Devices{Items: items})
+}
+
+func (c *DeviceController) Search(ctx *echo.Context) error {
+	items, err := c.usecase.Search(ctx.Request().Context(), strings.Split(ctx.QueryParam("imeis"), ","))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, schema.DeviceReferences{Items: items})
 }

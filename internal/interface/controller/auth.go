@@ -4,8 +4,6 @@ import (
 	"github.com/labstack/echo/v5"
 	"net/http"
 	"smapass-back/internal/domain/entity"
-	"smapass-back/internal/interface/auth"
-	"smapass-back/internal/interface/schema"
 	"smapass-back/internal/usecase"
 )
 
@@ -54,11 +52,4 @@ func (c *AuthController) Revoke(ctx *echo.Context) error {
 		return err
 	}
 	return ctx.NoContent(http.StatusNoContent)
-}
-func (c *AuthController) Session(ctx *echo.Context) error {
-	p, ok := auth.Principal(ctx.Request().Context())
-	if !ok {
-		return entity.ErrUnauthenticated
-	}
-	return ctx.JSON(http.StatusOK, schema.Session{IMEI: p.IMEI})
 }

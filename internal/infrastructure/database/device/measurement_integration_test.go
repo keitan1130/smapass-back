@@ -25,7 +25,6 @@ import (
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/infrastructure/auth"
 	authdb "smapass-back/internal/infrastructure/database/auth"
-	"smapass-back/internal/infrastructure/database/certificate"
 	"smapass-back/internal/infrastructure/database/testutil"
 	"smapass-back/internal/infrastructure/router"
 	"smapass-back/internal/interface/controller"
@@ -95,8 +94,7 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	r := NewRepository(db)
 	u := usecase.NewDeviceUsecase(r, testutil.Registration(t, db))
 	a := usecase.NewAuthUsecase(authdb.NewRepository(db), testutil.Registration(t, db))
-	cc := controller.NewCertificateController(usecase.NewCertificateUsecase(certificate.NewRepository(db)))
-	app := router.New(cc, controller.NewHealthController(nil), nil)
+	app := router.New(controller.NewHealthController(nil), nil)
 	router.AddDeviceRoutes(app, controller.NewDeviceController(u), auth.Middleware(a.Authenticate))
 	tokens, p, device, key := measurementSession(t, db, "490154203237518")
 	requestNumber := 0
@@ -195,11 +193,11 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	payload.Status = &entity.StatusMeasurement{OSVersion: "16", SDKInt: 36, BatteryTempC: &temperature, BatteryChargeMAh: &charge, BatteryFullChargeMAh: &fullCharge, ThermalHeadroom: &thermal}
 	secondInput := signedMeasurement(t, key, payload)
 	second := send(secondInput, 201)
-	state, err := r.FindState(ctx, device.IMEI)
+	state, err := r.FindState(ctx, publicID(t, db, device.IMEI), 100, 0)
 	if err != nil || state.RecordCount != 2 || state.Spec == nil || state.Spec.Model != "Pixel 8" || state.Status == nil || state.Status.BatteryTempC == nil || *state.Status.BatteryTempC != temperature || state.Status.ThermalHeadroom == nil || *state.Status.ThermalHeadroom != thermal || state.Status.HadAbnormalExit != nil {
 		t.Fatalf("stored projection: %+v %v", state, err)
 	}
-	if rows, total, err := r.StatusHistory(ctx, device.IMEI, 100, 0); err != nil || total != 1 || len(rows) != 1 || rows[0].BatteryFullChargeMAh == nil || *rows[0].BatteryFullChargeMAh != fullCharge {
+	if rows, total, err := historyPage(t, ctx, r, publicID(t, db, device.IMEI), 100, 0); err != nil || total != 1 || len(rows) != 1 || rows[0].BatteryFullChargeMAh == nil || *rows[0].BatteryFullChargeMAh != fullCharge {
 		t.Fatalf("history: %+v %d %v", rows, total, err)
 	}
 	before = activity()
@@ -225,7 +223,7 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	}
 	payload.Sequence, payload.PreviousHash, payload.Status.OSVersion = 3, &second.PayloadHash, "reject-fixture"
 	send(signedMeasurement(t, key, payload), 500)
-	if state, err := r.FindState(ctx, device.IMEI); err != nil || state.RecordCount != 2 || !activity().Equal(before) {
+	if state, err := r.FindState(ctx, publicID(t, db, device.IMEI), 100, 0); err != nil || state.RecordCount != 2 || !activity().Equal(before) {
 		t.Fatalf("partial write: %+v %v", state, err)
 	}
 	payload.Status.OSVersion = "16"
@@ -256,7 +254,7 @@ func TestMeasurementHTTPPersistenceVerificationRetriesAndTransfer(t *testing.T) 
 	send(signedMeasurement(t, key, payload), 403)
 	payload.KeyID = device.KeyID
 	fourth := send(signedMeasurement(t, newKey, payload), 201)
-	if rows, total, err := r.StatusHistory(ctx, device.IMEI, 100, 0); err != nil || total != 3 || len(rows) != 3 {
+	if rows, total, err := historyPage(t, ctx, r, publicID(t, db, device.IMEI), 100, 0); err != nil || total != 3 || len(rows) != 3 {
 		t.Fatalf("lifetime history: %d %d %v", len(rows), total, err)
 	}
 	if _, err := a.Refresh(ctx, entity.RefreshRequest{RefreshToken: tokens.RefreshToken}); err != nil {
@@ -292,7 +290,7 @@ func TestConcurrentMeasurementRetryIsSavedOnce(t *testing.T) {
 			duplicates++
 		}
 	}
-	state, err := NewRepository(db).FindState(ctx, device.IMEI)
+	state, err := NewRepository(db).FindState(ctx, publicID(t, db, device.IMEI), 100, 0)
 	if err != nil || duplicates != 1 || state.RecordCount != 1 {
 		t.Fatalf("concurrent retry duplicated records: %+v %d %v", state, duplicates, err)
 	}

@@ -1,97 +1,22 @@
-# データベース設計
+# データベース
 
-実行する SQL は [db/migrations](../db/migrations/000001_initial_schema.up.sql) が正本。ユーザー提供の仮 SQL を基に、画面・証明書の公開に必要な部分を加えた初期設計。今後の署名・発行仕様で変更する。
+証明書はIMEIの最新観測値と全期間のログから表示する。発行済みスナップショットを保存する構造は廃止した。現行スキーマは [初期定義](../db/migrations/000001_initial_schema.up.sql) 1本。
 
-## テーブル
-
-| テーブル | 用途 |
+| テーブル | 役割 |
 | --- | --- |
-| `shops` | 店舗 / 登録主体の基礎情報。事業者認証は未実装 |
-| `devices` | 物理端末の主キーとなる IMEI 全桁 |
-| `device_imei_aliases` | 同じ端末が持つ複数 IMEI と主 IMEI の対応 |
-| `device_ownerships` | 登録者の識別情報、登録期間、最終検証済みログの受信時刻 |
-| `device_legacy_ids` | 旧 UUID からの移行記録。端末管理には使わない |
-| `app_installations` | IMEI と登録期間に結び付くアプリ用の認証情報の単位・失効状態 |
-| `app_tokens` | アクセス・リフレッシュトークンのハッシュ、有効期限、更新履歴 |
-| `key_registration_challenges` | nonce、署名対象バイト列、用途・対象・期限、使用済み状態 |
-| `device_keys` | 端末の鍵履歴、方式、attestation、失効時刻 |
-| `device_logs` | 不変の署名対象データ、連番、前ハッシュ、署名、収集 / 受信時刻 |
-| `device_specs` | メーカー、モデル、SoC、CPU、RAM、ストレージ、画面の投影 |
-| `device_status` | OS、SDK、温度、サイクル、電荷、起動、異常終了、熱的余裕の投影 |
-| `anchors` | チェーン識別子、Merkle root、送信状態、トランザクション、確認時刻 |
-| `log_anchors` | ログとアンカーの対応、leaf index と Merkle proof |
-| `certificates` | IMEI・登録期間、状態、内部の後継ID、発行時刻、発行時点の公開スナップショット |
-| `certificate_logs` | 証明書に含める元ログの集合 |
-| `certificate_listings` | 変更可能な出品先、商品 ID、申告された IMEI 末尾、登録日時 |
-| `certificate_legacy_numbers` | 旧証明書番号のロールバック専用非公開退避。アプリからは使用しない |
-| `schema_migrations` | golang-migrate の適用バージョンと dirty 状態 |
+| `devices` | 主IMEI・公開用ランダムUUID `public_id`（unique）・作成日時 |
+| `device_imei_aliases` | 副IMEIから主IMEIへの解決 |
+| `device_ownerships` | 登録者の期間と最終検証済みログ受信時刻。3日ルールと権限に必要 |
+| `device_keys` | 期間ごとの鍵、非公開attestation、鍵の失効履歴 |
+| `device_logs` | 署名対象の正本、ハッシュ、前ハッシュ、署名、連番。更新・削除禁止 |
+| `device_specs`, `device_status` | 元ログから作る最新表示・履歴用の投影 |
+| `app_installations`, `app_tokens` | ログインなしの端末認証。トークンのハッシュと更新・再利用検知 |
+| `key_registration_challenges` | 初回登録・鍵交換の期限付きチャレンジと消費状態 |
+| `anchors`, `log_anchors` | 検証APIが返すチェーン・Merkle情報。チェーン送信自体は未実装 |
 
-整備履歴は公開型に場所を用意しているが、DB の専用テーブルや登録機能は未実装。`inspection` ログを事業者がどう署名するかは別途設計する。
+最新値と履歴は全登録期間を対象にし、主IMEI・公開用UUIDと端末全体の連番を引き継ぐ。過去の鍵は署名検証に必要なので削除しない。過去の登録期間・更新済みトークンも権限と再利用検知に必要。`canonical_payload` のUTF-8が署名の正本であり、JSONBから作り直さない。DBトリガーはログの連番・前ハッシュ・現登録と鍵の有効性を検査する。署名はアプリ層で検証し、検証済み受信時刻で3日ルールを更新する。
 
-## 仮 SQL からの主な変更
+スペックと状態の最新表示は、それぞれ元ログの `collected_at` 降順・同時刻は `seq` 降順で選ぶ。記録の受信・保存順が計測時刻と前後しても、古い観測値で最新表示を置き換えない。履歴・署名の連結・次の連番は保存順のまま維持する。
 
-- JSONB だけでは元の署名対象バイト列を復元できないため、`canonical_payload TEXT` と正規化方式の識別子を追加。JSONB との内容一致と UTF-8 の SHA-256 を DB 制約でも検査する。JCS の仕様適合や署名検証はこの CHECK だけでは保証しない。
-- アンカーの可変情報を `device_logs` から分離し、元ログの UPDATE / DELETE をトリガーで拒否する。
-- `chain` を追加し、Tapyrus 固定にしない。チェーン連携 API / worker は未実装。
-- 端末・鍵・投影・証明書のログ集合は IMEI の外部キーで結び付ける。鍵・ログ・証明書は登録者の履歴にも結び付ける。
-- 有効な鍵は端末ごとに1つ。鍵更新は旧鍵の `revoked_at` と新鍵登録を同時に行う方針。
-- 初期版の UUID と末尾4桁だけの管理を変更し、`000002` で IMEI 全桁を主キーにする。複数 IMEI は同じ主 IMEI に解決する。公開入口は `/certificates/{imei}`。再登録・検索も IMEI を基準にする。
-- 旧データの全桁は末尾から推測しない。既知のデモ以外は `db/prepare-imei-migration.sql` で確認済み対応を用意してから移行する。CLI は対応不足を適用前に拒否する。
-- 証明書、発行対象ログ、出品情報を追加。スナップショットの上書きを拒否し、状態と後継だけは変更できる。
-- `thermal_headroom` は元の案の「0〜1」に DB 制約を固定しない。採用する Android API の値域・未取得表現を mobile 側と確認する。
-- UUID と SHA-256 には PostgreSQL 標準関数を使用し、`pgcrypto` 拡張のインストールは不要。
 
-## 型・単位・公開
-
-- 日時は `TIMESTAMPTZ`、API は RFC 3339。DB / コンテナは UTC。画面のタイムゾーン変換は Web が行う。
-- 容量は bytes、バッテリーは mAh、温度は ℃。取得不能な値は SQL NULL / JSON null。
-- SHA-256 は BYTEA 32 bytes、署名は BYTEA。API ではハッシュを小文字 hex、署名を Base64 で返す。
-- 公開参照・失効はIMEIだけを使う。`certificates.id` と `successor_id` は履歴とログ集合の内部参照用UUIDで、公開レスポンスに含めない。証明書番号は廃止した。
-- JSONB スナップショットは型付きの公開データだけを返す。元ログ自体にも個人情報を入れない契約が必要。IMEI は公開 URL に使用する。所有者の識別情報や認証情報を公開データへ混ぜない。
-
-## 不変性の範囲
-
-`device_logs` の更新・削除、`certificates` の内部ID・発行時刻・端末・登録期間・デモ属性・スナップショットの変更を DB が拒否する。一方、`certificate_logs` の発行後の集合変更や、投影のログ種別・値との一致、Merkle proof の正しさは現時点で DB が完全には強制しない。書き込み用 usecase とトランザクション / 権限設計で補う必要がある。DB 所有者によるトリガー解除も防げないため、外部チェーン照合の代替にはならない。
-
-## マイグレーション
-
-```bash
-docker compose run --rm --build migrate up
-docker compose run --rm migrate version
-```
-
-SQL は migrate バイナリに埋め込む。変更後は必ず再ビルドする。適用済みファイルを編集せず、`000002_名前.up.sql` / `.down.sql` のように追加する。初期マイグレーションはトランザクションで実行する。
-
-ロールバック用の `docker compose run --rm migrate down-one` は直前のマイグレーションを1つ戻す。初期マイグレーションを戻すと全テーブルとデータを削除するので、使い捨て DB の検証や明示的に承認された復旧時に限る。`force` は用意していない。
-
-失敗時は `docker compose logs migrate db` と `migrate version` を確認する。dirty になった DB に SQL を再適用して済ませず、バックアップ、対象 SQL、実際のテーブル・データと照合して復旧を決める。エラーに DSN を出さないため、migration の失敗メッセージは簡潔にしている。
-
-## 永続化
-
-PostgreSQL 18 の Docker 公式配置に合わせ、名前付きボリューム `dbdata18` を `/var/lib/postgresql` にマウントする。17以前の `/var/lib/postgresql/data` の配置をそのまま使わない。[公式イメージの説明](https://github.com/docker-library/docs/blob/master/postgres/README.md) を参照。
-
-DB メジャーバージョンを変更するときは単なるイメージタグ変更ではなく、dump / restore または pg_upgrade を計画する。コード・SQL・`.env` はバックアップの代わりにならない。
-
-## IMEI への移行と登録者の変更
-
-詳細は [device-registration.md](device-registration.md)。署名対象の payload・署名・ハッシュを変更せず、参照先を IMEI に移す。旧 UUID の対応表はロールバックのために残す。
-
-最終検証済みログから3日後（初回ログ前は登録から3日後）に別の登録者へ切り替えられる。トランザクションのロックでログ受信と再登録を直列化し、旧登録者の鍵を失効する。単なる参照・再登録・未検証ログでは期間を更新しない。
-
-認証情報は `000003_device_auth` で追加する。生トークンや利用者のアカウントは保存しない。更新済みハッシュは再利用検知に使うため、現行のアプリ登録の行を途中で削除しない。[認証仕様](authentication.md) を参照。
-
-`000004_key_attestation` は検証日時とチャレンジの参照、IMEI 検証状態を追加する。既存鍵を検証済みに昇格させない。公開鍵・検証証跡・方式・対象・登録時刻などの変更と鍵履歴の削除、失効済み鍵の復活を DB で拒否する。
-
-## 証明書のIMEI統一
-
-`000005_imei_certificates` で `number` / `successor_number` を廃止し、後継の内部関係を `successor_id` に移す。スナップショット・ログ・発行日時は維持する。旧番号はロールバック用の `certificate_legacy_numbers` にだけ残す。新しい証明書は番号を持たない。down時にだけ、新規発行分へ旧仕様互換の番号を割り当てる。
-
-公開指定はIMEIに統一し、全登録期間の状態・計測履歴を継続参照する。証明書は最新の発行時スナップショットを失効状態も含めて返し、古い別のスナップショットへは戻らない。過去の証明書単位の公開指定は提供しない。
-
-`000006_imei_log_continuity` で、同じIMEIの最新ログに対する連番+1と前ハッシュの一致をDBで強制する。所有者交代・鍵交換・初期化後も連番を1へ戻さない。過去のログは更新しない。新しい登録者への `next_sequence` / `previous_hash` は、この端末全体の最新ログから取得する。ログ署名検証と取り込みAPIは [計測ログ送信](measurement-ingestion.md) を参照。
-
-## 計測ログの受信
-
-`POST /api/devices/{imei}/logs` は端末をロックした後に現在の認証情報・登録期間・鍵を確認し、JCS正本のECDSA署名を検証する。`device_logs` と `device_specs` または `device_status` を同じトランザクションで追加する。`signature_verified_at` と最終検証済みログの受信時刻は成功時だけサーバー時刻で保存する。同一の正本・署名の再送は更新せず元の受信時刻を返す。
-
-`000007_measurement_precision` は `thermal_headroom` を DOUBLE PRECISION にする。署名対象のbinary64値をREALの丸めで変えないための投影変更で、保存済みの正本・ハッシュ・署名は変更しない。温度と画面サイズもDBの小数桁を超える送信を拒否し、暗黙の丸めを防ぐ。
+移行方法と旧DBの扱いは [db/README.md](../db/README.md)。旧SQL・移行専用テーブルは残さない。初期定義は新規DB専用で、既存DBを自動で初期化・再番号付けしない。
