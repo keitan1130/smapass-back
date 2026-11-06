@@ -355,7 +355,7 @@
     "/api/devices/{imei}/revoke": {
       "post": {
         "operationId": "revokeOwnedDevice",
-        "summary": "Release current device registration and revoke credentials and keys; preserve public lifetime state and issued snapshots",
+        "summary": "Release current device registration and revoke credentials and keys; preserve lifetime device history",
         "security": [
           {
             "BearerAuth": []
@@ -1032,7 +1032,7 @@
             }
           }
         },
-        "description": "Public live certificate by stable device UUID. Includes latest known observations, last collection time, demo flag and paginated status history across all registrants. No issuance required. Missing observations are null; a known device without measurements has an empty history. Registration release does not hide history. No owner identity, credentials, private attestation or historical issued snapshot is returned. This response alone is not proof of verification.",
+        "description": "Public live certificate by stable device UUID. Includes latest known observations, last collection time, demo flag and paginated status history across all registrants. Missing observations are null; a known device without measurements has an empty history. Registration release does not hide history. No owner identity, credentials, private attestation is returned. This response alone is not proof of verification.",
         "security": []
       }
     },
@@ -1145,7 +1145,7 @@
             }
           }
         },
-        "description": "All stored logs across all registrants, including logs never included in an issued snapshot. Sequence ascending with pagination. Canonical payload, hashes and signatures support separate verification. Demo logs are not verified evidence. Known devices without logs return an empty page. Unknown UUID returns 404."
+        "description": "All stored logs across all registrants. Sequence ascending with pagination. Canonical payload, hashes and signatures support separate verification. Demo logs are not verified evidence. Known devices without logs return an empty page. Unknown UUID returns 404."
       }
     },
     "/api/devices/search": {
@@ -1157,7 +1157,7 @@
             "name": "imeis",
             "in": "query",
             "required": true,
-            "description": "Comma-separated IMEIs (1 to 50); duplicates and aliases resolve to one latest issued snapshot per device, ordered by primary IMEI.",
+            "description": "Comma-separated IMEIs (1 to 50). Each known IMEI resolves to a stable device UUID. Primary and secondary IMEIs of one device return the same UUID.",
             "schema": {
               "type": "string"
             },

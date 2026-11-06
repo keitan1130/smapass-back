@@ -54,7 +54,7 @@ func (publicDeviceRepository) Search(_ context.Context, imeis []string) ([]entit
 	return items, nil
 }
 
-func TestPublicDeviceStateDoesNotRequireCurrentHolderOrCertificate(t *testing.T) {
+func TestPublicDeviceStateWithoutAuthentication(t *testing.T) {
 	for _, test := range []struct {
 		path   string
 		status int
@@ -62,7 +62,7 @@ func TestPublicDeviceStateDoesNotRequireCurrentHolderOrCertificate(t *testing.T)
 		{"/api/devices/11111111-1111-4111-8111-111111111111", 200},
 		{"/api/devices/11111111-1111-4111-8111-111111111111?limit=1&offset=0", 200},
 		{"/api/devices/11111111-1111-4111-8111-111111111111/records", 200},
-		{"/api/devices/11111111-1111-4111-8111-111111111111/history", 404},
+		{"/api/devices/11111111-1111-4111-8111-111111111111/unknown", 404},
 		{"/api/devices/11111111-1111-4111-8111-111111111111?limit=501", 400},
 		{"/api/devices/11111111-1111-4111-8111-111111111111?offset=-1", 400},
 		{"/api/devices/22222222-2222-4222-8222-222222222222", 404},
@@ -145,20 +145,8 @@ func TestPublicAPIErrorContract(t *testing.T) {
 		contains string
 	}{
 		{"/health", 200, `"status":"ok"`},
-		{"/certificates/11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
-		{"/api/auth/session", 404, `"code":"not_found"`},
 		{"/missing", 404, `"code":"not_found"`},
 		{"/ready", 503, `"error"`},
-		{"/api/certificates/11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
-		{"/api/certificates/11111111-1111-4111-8111-111111111111/records", 404, `"code":"not_found"`},
-		{"/api/certificates/01ABCDEFGH", 404, `"code":"not_found"`},
-		{"/api/certificates/50982a98-31c1-595e-a66d-c3688af07155", 404, `"code":"not_found"`},
-		{"/api/certificates?ids=11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
-		{"/api/certificates/invalid", 404, `"code":"not_found"`},
-		{"/api/certificates", 404, `"code":"not_found"`},
-		{"/api/certificates?imeis=11111111-1111-4111-8111-111111111111", 404, `"code":"not_found"`},
-		{"/api/certificates/11111111-1111-4111-8111-111111111111/records?limit=501", 404, `"code":"not_found"`},
-		{"/api/certificates/11111111-1111-4111-8111-111111111111/records?offset=-1", 404, `"code":"not_found"`},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			app := New(controller.NewHealthController(usecase.NewHealthUsecase(unavailableDatabase{})), []string{"http://localhost:3000"})

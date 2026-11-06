@@ -34,7 +34,7 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	}
 	released, err := r.FindState(ctx, publicID(t, db, alias), 100, 0)
 	if err != nil || released.RegistrationStatus != "released" || released.RecordCount != 28 || released.History.Total != 28 || released.ID != initial.ID {
-		t.Fatalf("sale hid history or retained old listing: %+v %v", released, err)
+		t.Fatalf("sale hid lifetime history: %+v %v", released, err)
 	}
 	if items, total, err := historyPage(t, ctx, r, publicID(t, db, alias), 2, 27); err != nil || total != 28 || len(items) != 1 || items[0].Sequence != 28 {
 		t.Fatalf("released history: %+v %d %v", items, total, err)
@@ -72,18 +72,18 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	}
 	items, total, err := r.Records(ctx, publicID(t, db, alias), 500, 0)
 	if err != nil || total != 29 || len(items) != 29 || items[28].PreviousHash == nil || *items[28].PreviousHash != items[27].PayloadHash {
-		t.Fatalf("published lifetime evidence lost, duplicated or disconnected: %d %d %v", len(items), total, err)
+		t.Fatalf("lifetime evidence lost, duplicated or disconnected: %d %d %v", len(items), total, err)
 	}
 }
 
-func TestKnownDeviceStateBeforeIssuanceAndWithoutMeasurements(t *testing.T) {
+func TestKnownDeviceStateWithoutMeasurements(t *testing.T) {
 	db := testutil.NewDatabase(t)
 	ctx := context.Background()
 	_, _, principal := credentials(t, db, "490154203237518")
 	r := NewRepository(db)
 	state, err := r.FindState(ctx, publicID(t, db, principal.IMEI), 100, 0)
 	if err != nil || state.RecordCount != 0 || state.Spec != nil || state.Status != nil || state.History.Total != 0 || state.History.Items == nil || state.FirstCollectedAt != nil || state.LastCollectedAt != nil {
-		t.Fatalf("known device requires issuance or invented measurements: %+v %v", state, err)
+		t.Fatalf("known device returned invented measurements: %+v %v", state, err)
 	}
 	if items, total, err := historyPage(t, ctx, r, publicID(t, db, principal.IMEI), 100, 0); err != nil || total != 0 || items == nil || len(items) != 0 {
 		t.Fatalf("empty history: %+v %d %v", items, total, err)

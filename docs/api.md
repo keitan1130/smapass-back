@@ -68,11 +68,7 @@ UUIDはURL・QR・通常表示でIMEI全桁を出さないための識別子で�
 | POST | `/api/devices/{imei}/logs` | Bearer必須。署名付き計測を1件保存。新規201、同一再送200 |
 | POST | `/api/devices/{imei}/revoke` | Bearer必須。登録・鍵・認証を終了し、即時に次の登録を許可。履歴は残す |
 
-公開検索と `lookup` は別用途。`lookup` の非公開の登録情報を公開APIへ移さない。認証IMEIは登録・更新のTokenPair応答に含まれるため `/api/auth/session` は廃止。
-
-## 廃止したAPI
-
-`/api/devices/{imei}/history` は端末単体の `history` に統合。旧 `/api/certificates` の一括取得はIMEI検索を経由した `/api/devices?ids=...`、検証ログは `/api/devices/{id}/records` に移した。旧 `/api/certificates/{imei}`、バックエンドの `/certificates/{imei}`、証明書単位のrevokeは削除し404を返す。
+公開検索と `lookup` は別用途。`lookup` の非公開の登録情報を公開APIへ移さない。認証IMEIは登録・更新のTokenPair応答に含まれる。
 
 Webの `/certificates/{id}` はHTML・QRの遷移先として使用できる。バックエンドはこのHTMLルートを提供しない。WebはIMEI検索で得たUUIDで端末APIを呼ぶ。
 

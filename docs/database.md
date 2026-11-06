@@ -16,6 +16,5 @@
 
 最新値と履歴は全登録期間を対象にし、主IMEI・公開用UUIDと端末全体の連番を引き継ぐ。過去の鍵は署名検証に必要なので削除しない。過去の登録期間・更新済みトークンも権限と再利用検知に必要。`canonical_payload` のUTF-8が署名の正本であり、JSONBから作り直さない。DBトリガーはログの連番・前ハッシュ・現登録と鍵の有効性を検査する。署名はアプリ層で検証し、検証済み受信時刻で3日ルールを更新する。
 
-削除対象は `certificates`、`certificate_logs`、`certificate_listings`、`certificate_legacy_numbers`、未使用の `shops` と `devices.registered_by`、IMEIから導出できる `devices.imei_suffix`。ログ・鍵・認証・登録期間・アンカーは維持する。
 
 移行方法と旧DBの扱いは [db/README.md](../db/README.md)。旧SQL・移行専用テーブルは残さない。初期定義は新規DB専用で、既存DBを自動で初期化・再番号付けしない。

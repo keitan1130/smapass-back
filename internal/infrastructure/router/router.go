@@ -56,12 +56,13 @@ func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authent
 	public.GET("/search", devices.Search)
 	public.GET("/:id", devices.State)
 	public.GET("/:id/records", devices.Records)
-	g := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)), authenticate)
-	g.POST("", devices.Register)
-	g.POST("/key-challenges", devices.Challenge)
-	g.POST("/lookup", devices.Lookup)
-	g.POST("/:imei/revoke", devices.Revoke)
-	g.POST("/:imei/logs", devices.Ingest)
+	// Authenticate concrete writes, not the group's fallback for unknown URLs.
+	g := e.Group("/api/devices", middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(5)))
+	g.POST("", devices.Register, authenticate)
+	g.POST("/key-challenges", devices.Challenge, authenticate)
+	g.POST("/lookup", devices.Lookup, authenticate)
+	g.POST("/:imei/revoke", devices.Revoke, authenticate)
+	g.POST("/:imei/logs", devices.Ingest, authenticate)
 }
 
 func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController) {

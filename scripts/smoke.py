@@ -25,8 +25,8 @@ def main():
         raise RuntimeError("Unexpected live demo state")
     if state["history"]["total"] != 28 or len(state["history"]["items"]) != 2:
         raise RuntimeError("Unexpected history page")
-    if any(field in state for field in ("imei", "imeis", "snapshot", "certificate", "ownership_id")):
-        raise RuntimeError("Display response exposed IMEI or legacy/private data")
+    if any(field in state for field in ("imei", "imeis", "ownership_id")):
+        raise RuntimeError("Display response exposed IMEI or private registration data")
     summaries = get(f"/api/devices?ids={device_id}")["items"]
     if len(summaries) != 1 or "history" in summaries[0] or "imei" in summaries[0]:
         raise RuntimeError("Unexpected batch summaries")

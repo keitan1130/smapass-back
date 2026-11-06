@@ -107,14 +107,12 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	if err := json.Unmarshal(body, &public); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"imei", "imeis", "certificate", "snapshot", "ownership_id", "key_id", "owner_subject"} {
+	for _, field := range []string{"imei", "imeis", "ownership_id", "key_id", "owner_subject"} {
 		if _, exists := public[field]; exists {
 			t.Fatalf("private or stale field exposed: %s", field)
 		}
 	}
 	request(http.MethodGet, "/api/devices?ids="+publicID(t, db, a.IMEI), "", nil, 200)
-	request(http.MethodGet, "/api/certificates/"+a.IMEI, "", nil, 404)
-	request(http.MethodPost, "/api/certificates/"+a.IMEI+"/revoke", a.AccessToken, nil, 404)
 	b := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("000000000094821"), 201))
 	request(http.MethodPost, "/api/devices/lookup", b.AccessToken, lookup, 404)
 	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", b.AccessToken, nil, 404)

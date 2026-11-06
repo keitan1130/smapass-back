@@ -12,7 +12,7 @@ IMEI は公開 URL に使う識別子なので秘密として扱えない。書�
 
 1. 初回は `POST /api/auth/challenges` に IMEI を送ってチャレンジを取り、Android Keystore で新しい鍵・attestation・署名を用意する。`POST /api/auth/devices` に IMEI・公開鍵・証明書チェーン・署名を送り、認証情報をアプリ内に保存する。
 2. 初回登録で公開鍵も保存される。鍵交換は `/api/devices/key-challenges` のチャレンジで新しい鍵を生成し、`POST /api/devices` に公開鍵・検証証跡を送り、アクセストークンを付ける。
-3. 認証が必要な API には常にアクセストークンを付ける。現在の端末は `GET /api/auth/session` で確認できる。
+3. 認証が必要な API には常にアクセストークンを付ける。対象IMEIは登録・更新応答で確認できる。
 4. アクセストークンが期限切れになったらリフレッシュトークンで更新し、返された2つのトークンを両方置き換える。
 5. 認証情報だけを止める場合は `/api/auth/revoke`、売却などで登録も終了する場合は `/api/devices/{imei}/revoke` を呼ぶ。
 
@@ -27,7 +27,7 @@ Content-Type: application/json
 {"imei":"490154203237518","public_key":"<P-256 公開鍵 PEM>","proof":{"challenge_id":"<チャレンジID>","certificate_chain":["<DERをBase64>","<中間証明書・ルート>"],"signature_der":"<署名DERをBase64>"}}
 ```
 
-成功は201。`imei`（主 IMEI）、`access_token`、`refresh_token`、`token_type: "Bearer"`、`expires_in: 900`、`refresh_expires_at` を返す。この時点で公開鍵も保存済みで、`/api/devices/lookup` と `/api/auth/session` で確認できる。検証方法は [鍵登録の接続手順](android-key-registration.md#初回登録初期化後の再登録) を参照。
+成功は201。`imei`（主 IMEI）、`access_token`、`refresh_token`、`token_type: "Bearer"`、`expires_in: 900`、`refresh_expires_at` を返す。この時点で公開鍵も保存済みで、`POST /api/devices/lookup` で確認できる。検証方法は [鍵登録の接続手順](android-key-registration.md#初回登録初期化後の再登録) を参照。
 
 使用中の端末へ別の認証情報を発行する操作は409。認証情報を取得する目的でこの API を毎回呼ばない。同じ IMEI や副 IMEI を再送しても、既存の認証情報を返したり、その登録者に成り代わったりはできない。
 
