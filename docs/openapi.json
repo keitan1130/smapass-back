@@ -3,8 +3,8 @@
     "schemas": {
       "Device": {
         "properties": {
-          "imei": {
-            "pattern": "^[0-9]{15}$",
+          "device_id": {
+            "format": "uuid",
             "type": "string"
           },
           "imei_attested": {
@@ -56,7 +56,7 @@
           }
         },
         "required": [
-          "imei",
+          "device_id",
           "ownership_id",
           "registered_at",
           "last_verified_log_at",
@@ -555,9 +555,8 @@
             "format": "date-time",
             "type": "string"
           },
-          "imei": {
-            "description": "The single IMEI registered for this device.",
-            "pattern": "^[0-9]{15}$",
+          "device_id": {
+            "format": "uuid",
             "type": "string"
           },
           "key_id": {
@@ -621,7 +620,7 @@
         },
         "required": [
           "schema_version",
-          "imei",
+          "device_id",
           "key_id",
           "sequence",
           "type",
@@ -634,12 +633,12 @@
       },
       "MeasurementReceipt": {
         "properties": {
+          "device_id": {
+            "format": "uuid",
+            "type": "string"
+          },
           "duplicate": {
             "type": "boolean"
-          },
-          "imei": {
-            "pattern": "^[0-9]{15}$",
-            "type": "string"
           },
           "payload_hash": {
             "pattern": "^[0-9a-f]{64}$",
@@ -663,7 +662,7 @@
           }
         },
         "required": [
-          "imei",
+          "device_id",
           "sequence",
           "payload_hash",
           "received_at",
@@ -734,8 +733,8 @@
       },
       "RegisterDevice": {
         "properties": {
-          "imei": {
-            "pattern": "^[0-9]{15}$",
+          "device_id": {
+            "format": "uuid",
             "type": "string"
           },
           "proof": {
@@ -747,7 +746,7 @@
           }
         },
         "required": [
-          "imei",
+          "device_id",
           "public_key",
           "proof"
         ],
@@ -755,13 +754,13 @@
       },
       "RotationChallengeRequest": {
         "properties": {
-          "imei": {
-            "pattern": "^[0-9]{15}$",
+          "device_id": {
+            "format": "uuid",
             "type": "string"
           }
         },
         "required": [
-          "imei"
+          "device_id"
         ],
         "type": "object"
       },
@@ -1115,14 +1114,14 @@
           "access_token": {
             "type": "string"
           },
+          "device_id": {
+            "format": "uuid",
+            "type": "string"
+          },
           "expires_in": {
             "const": 900,
             "format": "int32",
             "type": "integer"
-          },
-          "imei": {
-            "pattern": "^[0-9]{15}$",
-            "type": "string"
           },
           "refresh_expires_at": {
             "format": "date-time",
@@ -1137,7 +1136,7 @@
           }
         },
         "required": [
-          "imei",
+          "device_id",
           "access_token",
           "refresh_token",
           "token_type",
@@ -1794,7 +1793,7 @@
                 }
               }
             },
-            "description": "Invalid IMEI"
+            "description": "Invalid device UUID"
           },
           "401": {
             "content": {
@@ -1844,13 +1843,13 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
-                  "imei": {
-                    "pattern": "^[0-9]{15}$",
+                  "device_id": {
+                    "format": "uuid",
                     "type": "string"
                   }
                 },
                 "required": [
-                  "imei"
+                  "device_id"
                 ],
                 "type": "object"
               }
@@ -1935,7 +1934,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Look up an owned device by IMEI"
+        "summary": "Look up an owned device by UUID"
       }
     },
     "/api/devices/search": {
@@ -2142,129 +2141,17 @@
         "summary": "Read the live certificate: latest device observations and lifetime status history"
       }
     },
-    "/api/devices/{id}/records": {
-      "get": {
-        "description": "All stored logs across all registrants. Sequence ascending with pagination. Canonical payload, hashes and signatures support separate verification. Demo logs are not verified evidence. Known devices without logs return an empty page. Unknown UUID returns 404.",
-        "operationId": "getDeviceRecords",
+    "/api/devices/{id}/logs": {
+      "post": {
+        "description": "Bearer token required. The path UUID, signed device_id, authenticated device and current attested key must identify the same device. Accepts schema_version 1 only; IMEI and arbitrary fields in the signed payload are rejected. canonical_payload must be exact RFC 8785 JCS UTF-8 JSON with all nullable fields included, signed with P-256 SHA256withECDSA and standard Base64 ASN.1 DER. Sequence and previous hash continue across holders and keys. Exact retries return the original receipt without extending activity. Body limit: 128 KiB; signed payload limit: 64 KiB. Grading and chain anchoring are not implemented.",
+        "operationId": "submitMeasurement",
         "parameters": [
           {
-            "description": "Stable random UUID assigned to the physical device. Resolve via IMEI search.",
-            "example": "11111111-1111-4111-8111-111111111111",
             "in": "path",
             "name": "id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": 100,
-              "maximum": 500,
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "schema": {
-              "default": 0,
-              "maximum": 1000000,
-              "minimum": 0,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Records"
-                }
-              }
-            },
-            "description": "Evidence page; these records do not imply verification success"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Invalid input"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Not found"
-          },
-          "405": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Method not allowed"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Rate limited"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Internal error"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unavailable"
-          }
-        },
-        "summary": "Read lifetime measurement evidence by UUID"
-      }
-    },
-    "/api/devices/{imei}/logs": {
-      "post": {
-        "description": "Bearer token required. The path accepts a primary or secondary IMEI; the signed envelope must use the primary IMEI and registered key UUID. canonical_payload must be the exact RFC 8785 JCS UTF-8 JSON string of MeasurementPayload, with all nullable fields included. Sign its UTF-8 bytes using SHA256withECDSA (P-256), encode the ASN.1 DER signature in standard Base64. Only the current attested key can append. All logs share an IMEI-wide sequence across key and holder changes. Exact retries from the current registration return the original receipt without extending registration activity. State and status history become readable immediately; this does not issue certificates, compute grades, verify physical measurement truth, or anchor to a chain. Body limit: 128 KiB; signed payload limit: 64 KiB.",
-        "operationId": "submitMeasurement",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "imei",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9]{15}$",
               "type": "string"
             }
           }
@@ -2386,20 +2273,132 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Verify and atomically append one signed spec or status measurement by IMEI"
+        "summary": "Verify and atomically append one signed spec or status measurement by UUID"
       }
     },
-    "/api/devices/{imei}/revoke": {
+    "/api/devices/{id}/records": {
+      "get": {
+        "description": "All stored logs across all registrants. Sequence ascending with pagination. Canonical payload, hashes and signatures support separate verification. Demo logs are not verified evidence. Known devices without logs return an empty page. Unknown UUID returns 404.",
+        "operationId": "getDeviceRecords",
+        "parameters": [
+          {
+            "description": "Stable random UUID assigned to the physical device. Resolve via IMEI search.",
+            "example": "11111111-1111-4111-8111-111111111111",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Records"
+                }
+              }
+            },
+            "description": "Evidence page; these records do not imply verification success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "summary": "Read lifetime measurement evidence by UUID"
+      }
+    },
+    "/api/devices/{id}/revoke": {
       "post": {
-        "description": "During sale or transfer, old credentials and keys lose writing authority while lifetime device state and history remain publicly readable by IMEI. The next holder can immediately register the same device and continue its sequence and previous hash.",
+        "description": "Releases the current registration by device UUID. Old credentials and keys lose writing authority; lifetime history remains public under the same UUID. The next holder can enroll with the same IMEI and continue the existing sequence and previous hash.",
         "operationId": "revokeOwnedDevice",
         "parameters": [
           {
             "in": "path",
-            "name": "imei",
+            "name": "id",
             "required": true,
             "schema": {
-              "pattern": "^[0-9]{15}$",
+              "format": "uuid",
               "type": "string"
             }
           }

@@ -13,22 +13,21 @@ import (
 	"smapass-back/internal/infrastructure/database/authorization"
 )
 
-func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Principal, imei string, log *entity.MeasurementLog) (*entity.MeasurementReceipt, error) {
+func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Principal, deviceID string, log *entity.MeasurementLog) (*entity.MeasurementReceipt, error) {
 	var result *entity.MeasurementReceipt
 	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		primary := imei
-		if err := lockDevice(ctx, tx, primary); err != nil {
+		if err := lockDevice(ctx, tx, deviceID); err != nil {
 			return err
 		}
-		if err := authorization.RequireDevice(ctx, tx, principal, primary); err != nil {
+		if err := authorization.RequireDevice(ctx, tx, principal, deviceID); err != nil {
 			return err
 		}
-		if log.Payload.IMEI != primary {
+		if log.Payload.DeviceID != deviceID {
 			return entity.ErrInvalidMeasurement
 		}
 		var ownership int64
-		if err := tx.NewRaw(`SELECT id FROM device_ownerships WHERE imei=? AND ended_at IS NULL
-			AND owner_issuer=? AND owner_subject=?`, primary, principal.Issuer, principal.Subject).Scan(ctx, &ownership); err != nil {
+		if err := tx.NewRaw(`SELECT id FROM device_ownerships WHERE device_id=? AND ended_at IS NULL
+			AND owner_issuer=? AND owner_subject=?`, deviceID, principal.Issuer, principal.Subject).Scan(ctx, &ownership); err != nil {
 			return err
 		}
 		var existing struct {
@@ -40,14 +39,14 @@ func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Pri
 			SignatureVerifiedAt *time.Time
 		}
 		err := tx.NewRaw(`SELECT canonical_payload,signature,ownership_id,key_id,received_at,signature_verified_at
-			FROM device_logs WHERE imei=? AND seq=?`, primary, log.Payload.Sequence).Scan(ctx, &existing)
+			FROM device_logs WHERE device_id=? AND seq=?`, deviceID, log.Payload.Sequence).Scan(ctx, &existing)
 		if err == nil {
 			// Exact retries are read-only: do not renew the 3-day activity timer.
 			if existing.OwnershipID != ownership || existing.KeyID != log.Payload.KeyID || existing.SignatureVerifiedAt == nil ||
 				existing.CanonicalPayload != log.CanonicalPayload || !bytes.Equal(existing.Signature, log.Signature) {
 				return entity.ErrMeasurementConflict
 			}
-			result = &entity.MeasurementReceipt{IMEI: primary, Sequence: log.Payload.Sequence, PayloadHash: hex.EncodeToString(log.Hash[:]),
+			result = &entity.MeasurementReceipt{DeviceID: deviceID, Sequence: log.Payload.Sequence, PayloadHash: hex.EncodeToString(log.Hash[:]),
 				ReceivedAt: existing.ReceivedAt, SignatureVerified: true, Duplicate: true}
 			return nil
 		}
@@ -60,7 +59,7 @@ func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Pri
 			AttestationVerifiedAt *time.Time
 		}
 		err = tx.NewRaw(`SELECT public_key,signature_algorithm,attestation_verified_at FROM device_keys
-			WHERE id=? AND imei=? AND ownership_id=? AND revoked_at IS NULL`, log.Payload.KeyID, primary, ownership).Scan(ctx, &key)
+			WHERE id=? AND device_id=? AND ownership_id=? AND revoked_at IS NULL`, log.Payload.KeyID, deviceID, ownership).Scan(ctx, &key)
 		if errors.Is(err, sql.ErrNoRows) {
 			return entity.ErrMeasurementSignature
 		}
@@ -77,7 +76,7 @@ func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Pri
 			Seq         int64
 			PayloadHash []byte
 		}
-		err = tx.NewRaw("SELECT seq,payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1", primary).Scan(ctx, &previous)
+		err = tx.NewRaw("SELECT seq,payload_hash FROM device_logs WHERE device_id=? ORDER BY seq DESC LIMIT 1", deviceID).Scan(ctx, &previous)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -93,33 +92,33 @@ func (r *Repository) AppendMeasurement(ctx context.Context, principal entity.Pri
 			ReceivedAt time.Time
 		}
 		err = tx.NewRaw(`INSERT INTO device_logs
-			(imei,ownership_id,key_id,seq,type,canonicalization,canonical_payload,payload,payload_hash,prev_hash,signature,collected_at,signature_verified_at)
+			(device_id,ownership_id,key_id,seq,type,canonicalization,canonical_payload,payload,payload_hash,prev_hash,signature,collected_at,signature_verified_at)
 			VALUES (?,?,?,?,?,?,?,?::jsonb,?,?,?,?,clock_timestamp()) RETURNING id,received_at`,
-			primary, ownership, log.Payload.KeyID, log.Payload.Sequence, log.Payload.Type, entity.MeasurementCanonicalization,
+			deviceID, ownership, log.Payload.KeyID, log.Payload.Sequence, log.Payload.Type, entity.MeasurementCanonicalization,
 			log.CanonicalPayload, log.CanonicalPayload, log.Hash[:], prevHash, log.Signature, log.Payload.CollectedAt).Scan(ctx, &stored)
 		if err != nil {
 			return err
 		}
-		if err := insertMeasurementProjection(ctx, tx, stored.ID, primary, log.Payload); err != nil {
+		if err := insertMeasurementProjection(ctx, tx, stored.ID, deviceID, log.Payload); err != nil {
 			return err
 		}
-		result = &entity.MeasurementReceipt{IMEI: primary, Sequence: log.Payload.Sequence, PayloadHash: hex.EncodeToString(log.Hash[:]),
+		result = &entity.MeasurementReceipt{DeviceID: deviceID, Sequence: log.Payload.Sequence, PayloadHash: hex.EncodeToString(log.Hash[:]),
 			ReceivedAt: stored.ReceivedAt, SignatureVerified: true}
 		return nil
 	})
 	return result, err
 }
 
-func insertMeasurementProjection(ctx context.Context, tx bun.Tx, id, imei string, p entity.MeasurementPayload) error {
+func insertMeasurementProjection(ctx context.Context, tx bun.Tx, id, deviceID string, p entity.MeasurementPayload) error {
 	if s := p.Spec; s != nil {
 		_, err := tx.ExecContext(ctx, `INSERT INTO device_specs
-			(log_id,imei,manufacturer,model,soc,cpu_cores,ram_bytes,storage_bytes,screen_size_inch,screen_density_dpi,collected_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?)`, id, imei, s.Manufacturer, s.Model, s.SoC, s.CPUCores, s.RAMBytes, s.StorageBytes, s.ScreenSizeInch, s.ScreenDensityDPI, p.CollectedAt)
+			(log_id,device_id,manufacturer,model,soc,cpu_cores,ram_bytes,storage_bytes,screen_size_inch,screen_density_dpi,collected_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?)`, id, deviceID, s.Manufacturer, s.Model, s.SoC, s.CPUCores, s.RAMBytes, s.StorageBytes, s.ScreenSizeInch, s.ScreenDensityDPI, p.CollectedAt)
 		return err
 	}
 	s := p.Status
 	_, err := tx.ExecContext(ctx, `INSERT INTO device_status
-		(log_id,imei,os_version,sdk_int,battery_temp_c,battery_cycle_count,battery_charge_mah,battery_full_charge_mah,boot_count,had_abnormal_exit,thermal_headroom,collected_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, id, imei, s.OSVersion, s.SDKInt, s.BatteryTempC, s.BatteryCycleCount, s.BatteryChargeMAh, s.BatteryFullChargeMAh, s.BootCount, s.HadAbnormalExit, s.ThermalHeadroom, p.CollectedAt)
+		(log_id,device_id,os_version,sdk_int,battery_temp_c,battery_cycle_count,battery_charge_mah,battery_full_charge_mah,boot_count,had_abnormal_exit,thermal_headroom,collected_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, id, deviceID, s.OSVersion, s.SDKInt, s.BatteryTempC, s.BatteryCycleCount, s.BatteryChargeMAh, s.BatteryFullChargeMAh, s.BootCount, s.HadAbnormalExit, s.ThermalHeadroom, p.CollectedAt)
 	return err
 }

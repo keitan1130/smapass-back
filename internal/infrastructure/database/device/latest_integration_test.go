@@ -21,7 +21,7 @@ func TestLatestObservationsUseCollectionTimeThenSequence(t *testing.T) {
 	latest := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	older := latest.Add(-time.Hour)
 	oldest := older.Add(-time.Hour)
-	payload := entity.MeasurementPayload{SchemaVersion: 1, IMEI: device.IMEI, KeyID: device.KeyID}
+	payload := entity.MeasurementPayload{SchemaVersion: 1, DeviceID: device.DeviceID, KeyID: device.KeyID}
 	send := func(at time.Time, spec *entity.SpecMeasurement, status *entity.StatusMeasurement) {
 		t.Helper()
 		payload.Sequence++
@@ -30,7 +30,7 @@ func TestLatestObservationsUseCollectionTimeThenSequence(t *testing.T) {
 		if spec != nil {
 			payload.Type = "spec"
 		}
-		receipt, err := u.Ingest(ctx, principal, device.IMEI, signedMeasurement(t, key, payload))
+		receipt, err := u.Ingest(ctx, principal, device.DeviceID, signedMeasurement(t, key, payload))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func TestLatestObservationsUseCollectionTimeThenSequence(t *testing.T) {
 	send(latest, nil, &entity.StatusMeasurement{OSVersion: "15", SDKInt: 35})
 	send(older, &entity.SpecMeasurement{Manufacturer: "Google", Model: "backfilled"}, nil)
 	send(older, nil, &entity.StatusMeasurement{OSVersion: "14", SDKInt: 34})
-	id := publicID(t, db, device.IMEI)
+	id := device.DeviceID
 	state, err := r.FindState(ctx, id, 100, 0)
 	if err != nil {
 		t.Fatal(err)

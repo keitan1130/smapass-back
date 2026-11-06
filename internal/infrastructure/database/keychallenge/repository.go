@@ -22,16 +22,20 @@ func NewRepository(db *bun.DB) *Repository { return &Repository{db: db} }
 
 var _ repository.KeyChallengeRepository = (*Repository)(nil)
 
-func (r *Repository) Create(ctx context.Context, purpose string, imei string, p entity.Principal) (*entity.KeyChallenge, error) {
+func (r *Repository) Create(ctx context.Context, purpose string, identity string, p entity.Principal) (*entity.KeyChallenge, error) {
 	var result *entity.KeyChallenge
 	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var installation any
+		var installation, enrollmentIMEI, deviceID any
+		if purpose == "enroll" {
+			enrollmentIMEI = identity
+		}
 		if purpose == "rotate" {
 			installation = p.Subject
-			if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei); err != nil {
+			deviceID = identity
+			if _, err := tx.ExecContext(ctx, "SELECT id FROM devices WHERE id=? FOR UPDATE", identity); err != nil {
 				return err
 			}
-			if err := authorization.RequireDevice(ctx, tx, p, imei); err != nil {
+			if err := authorization.RequireDevice(ctx, tx, p, identity); err != nil {
 				return err
 			}
 		}
@@ -43,10 +47,11 @@ func (r *Repository) Create(ctx context.Context, purpose string, imei string, p 
 			Protocol       string `json:"protocol"`
 			Purpose        string `json:"purpose"`
 			ID             string `json:"id"`
-			IMEI           string `json:"imei"`
+			IMEI           any    `json:"imei,omitempty"`
+			DeviceID       any    `json:"device_id,omitempty"`
 			InstallationID string `json:"installation_id"`
 			Nonce          string `json:"nonce"`
-		}{"smapass-key-registration-v2", purpose, id, imei, p.Subject, base64.StdEncoding.EncodeToString(nonce[:])})
+		}{"smapass-key-registration-v3", purpose, id, enrollmentIMEI, deviceID, p.Subject, base64.StdEncoding.EncodeToString(nonce[:])})
 		if err != nil {
 			return err
 		}
@@ -55,7 +60,7 @@ func (r *Repository) Create(ctx context.Context, purpose string, imei string, p 
 			return err
 		}
 		expires := now.Add(entity.KeyChallengeLifetime)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO key_registration_challenges (id,imei,purpose,installation_id,nonce,signing_payload,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)`, id, imei, purpose, installation, nonce[:], payload, now, expires); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO key_registration_challenges (id,imei,device_id,purpose,installation_id,nonce,signing_payload,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)`, id, enrollmentIMEI, deviceID, purpose, installation, nonce[:], payload, now, expires); err != nil {
 			return err
 		}
 		result = &entity.KeyChallenge{ID: id, AttestationChallenge: base64.StdEncoding.EncodeToString(nonce[:]), SigningPayload: base64.StdEncoding.EncodeToString(payload), ExpiresAt: expires}
@@ -65,18 +70,18 @@ func (r *Repository) Create(ctx context.Context, purpose string, imei string, p 
 }
 
 type record struct {
-	ID, IMEI, Purpose     string
-	InstallationID        *string
-	Nonce, SigningPayload []byte
-	ExpiresAt             time.Time
-	ConsumedAt            *time.Time
+	ID, IMEI, DeviceID, Purpose string
+	InstallationID              *string
+	Nonce, SigningPayload       []byte
+	ExpiresAt                   time.Time
+	ConsumedAt                  *time.Time
 }
 
 func find(ctx context.Context, db bun.IDB, id string, lock bool) (*entity.ChallengeContext, error) {
 	var row record
-	query := "SELECT id,imei,purpose,installation_id,nonce,signing_payload,expires_at,consumed_at FROM key_registration_challenges WHERE id=?"
+	query := "SELECT c.id,COALESCE(c.imei,d.imei,'') AS imei,COALESCE(c.device_id::text,'') AS device_id,c.purpose,c.installation_id,c.nonce,c.signing_payload,c.expires_at,c.consumed_at FROM key_registration_challenges c LEFT JOIN devices d ON d.id=c.device_id WHERE c.id=?"
 	if lock {
-		query += " FOR UPDATE"
+		query += " FOR UPDATE OF c"
 	}
 	err := db.NewRaw(query, id).Scan(ctx, &row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -85,7 +90,7 @@ func find(ctx context.Context, db bun.IDB, id string, lock bool) (*entity.Challe
 	if err != nil {
 		return nil, err
 	}
-	result := &entity.ChallengeContext{ID: row.ID, IMEI: row.IMEI, Purpose: row.Purpose, Nonce: row.Nonce, Payload: row.SigningPayload, ExpiresAt: row.ExpiresAt, ConsumedAt: row.ConsumedAt}
+	result := &entity.ChallengeContext{ID: row.ID, IMEI: row.IMEI, DeviceID: row.DeviceID, Purpose: row.Purpose, Nonce: row.Nonce, Payload: row.SigningPayload, ExpiresAt: row.ExpiresAt, ConsumedAt: row.ConsumedAt}
 	if row.InstallationID != nil {
 		result.InstallationID = *row.InstallationID
 	}
@@ -97,7 +102,7 @@ func (r *Repository) Find(ctx context.Context, id string) (*entity.ChallengeCont
 
 // Consume runs after the device/installation locks in the transaction that saves
 // the key. A rollback leaves the challenge reusable; successful issuance uses it once.
-func Consume(ctx context.Context, tx bun.Tx, purpose string, imei string, p entity.Principal, verified *entity.VerifiedKey) (bool, error) {
+func Consume(ctx context.Context, tx bun.Tx, purpose string, identity string, p entity.Principal, verified *entity.VerifiedKey) (bool, error) {
 	if verified == nil || verified.PolicyVersion != entity.KeyPolicyVersion {
 		return false, entity.ErrAttestationRejected
 	}
@@ -112,10 +117,10 @@ func Consume(ctx context.Context, tx bun.Tx, purpose string, imei string, p enti
 	if !now.Before(verified.ValidUntil) {
 		return false, entity.ErrAttestationRejected
 	}
-	if !now.Before(challenge.ExpiresAt) || challenge.IMEI != imei || challenge.Purpose != purpose {
+	if !now.Before(challenge.ExpiresAt) || challenge.Purpose != purpose || (purpose == "enroll" && challenge.IMEI != identity) || (purpose == "rotate" && challenge.DeviceID != identity) {
 		return false, entity.ErrChallengeInvalid
 	}
-	if purpose == "rotate" && (challenge.InstallationID != p.Subject || challenge.IMEI != p.IMEI) {
+	if purpose == "rotate" && (challenge.InstallationID != p.Subject || challenge.DeviceID != p.DeviceID) {
 		return false, entity.ErrChallengeInvalid
 	}
 	if purpose == "enroll" && (challenge.ConsumedAt != nil || challenge.InstallationID != "") {

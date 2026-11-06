@@ -252,7 +252,7 @@
     "/api/devices/lookup": {
       "post": {
         "operationId": "lookupOwnedDevice",
-        "summary": "Look up an owned device by IMEI",
+        "summary": "Look up an owned device by UUID",
         "security": [
           {
             "BearerAuth": []
@@ -265,13 +265,13 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "imei"
+                  "device_id"
                 ],
                 "additionalProperties": false,
                 "properties": {
-                  "imei": {
+                  "device_id": {
                     "type": "string",
-                    "pattern": "^[0-9]{15}$"
+                    "format": "uuid"
                   }
                 }
               }
@@ -352,7 +352,7 @@
         }
       }
     },
-    "/api/devices/{imei}/revoke": {
+    "/api/devices/{id}/revoke": {
       "post": {
         "operationId": "revokeOwnedDevice",
         "summary": "Release current device registration and revoke credentials and keys; preserve lifetime device history",
@@ -363,12 +363,12 @@
         ],
         "parameters": [
           {
-            "name": "imei",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9]{15}$"
+              "format": "uuid"
             }
           }
         ],
@@ -427,7 +427,7 @@
             }
           }
         },
-        "description": "During sale or transfer, old credentials and keys lose writing authority while lifetime device state and history remain publicly readable by IMEI. The next holder can immediately register the same device and continue its sequence and previous hash."
+        "description": "Releases the current registration by device UUID. Old credentials and keys lose writing authority; lifetime history remains public under the same UUID. The next holder can enroll with the same IMEI and continue the existing sequence and previous hash."
       }
     },
     "/api/auth/devices": {
@@ -741,7 +741,7 @@
             }
           },
           "400": {
-            "description": "Invalid IMEI",
+            "description": "Invalid device UUID",
             "content": {
               "application/json": {
                 "schema": {
@@ -788,10 +788,10 @@
         ]
       }
     },
-    "/api/devices/{imei}/logs": {
+    "/api/devices/{id}/logs": {
       "post": {
         "operationId": "submitMeasurement",
-        "summary": "Verify and atomically append one signed spec or status measurement by IMEI",
+        "summary": "Verify and atomically append one signed spec or status measurement by UUID",
         "security": [
           {
             "BearerAuth": []
@@ -799,12 +799,12 @@
         ],
         "parameters": [
           {
-            "name": "imei",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9]{15}$"
+              "format": "uuid"
             }
           }
         ],
@@ -910,7 +910,7 @@
             }
           }
         },
-        "description": "Bearer token required. The path accepts a primary or secondary IMEI; the signed envelope must use the primary IMEI and registered key UUID. canonical_payload must be the exact RFC 8785 JCS UTF-8 JSON string of MeasurementPayload, with all nullable fields included. Sign its UTF-8 bytes using SHA256withECDSA (P-256), encode the ASN.1 DER signature in standard Base64. Only the current attested key can append. All logs share an IMEI-wide sequence across key and holder changes. Exact retries from the current registration return the original receipt without extending registration activity. State and status history become readable immediately; this does not issue certificates, compute grades, verify physical measurement truth, or anchor to a chain. Body limit: 128 KiB; signed payload limit: 64 KiB.",
+        "description": "Bearer token required. The path UUID, signed device_id, authenticated device and current attested key must identify the same device. Accepts schema_version 1 only; IMEI and arbitrary fields in the signed payload are rejected. canonical_payload must be exact RFC 8785 JCS UTF-8 JSON with all nullable fields included, signed with P-256 SHA256withECDSA and standard Base64 ASN.1 DER. Sequence and previous hash continue across holders and keys. Exact retries return the original receipt without extending activity. Body limit: 128 KiB; signed payload limit: 64 KiB. Grading and chain anchoring are not implemented.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1278,10 +1278,10 @@
       }
     },
     "Device": {
-      "imei": {
-        "pattern": "^[0-9]{15}$"
-      },
       "key_id": {
+        "format": "uuid"
+      },
+      "device_id": {
         "format": "uuid"
       }
     },
@@ -1289,8 +1289,8 @@
       "public_key": {
         "minLength": 1
       },
-      "imei": {
-        "pattern": "^[0-9]{15}$"
+      "device_id": {
+        "format": "uuid"
       }
     },
     "TokenPair": {
@@ -1300,8 +1300,8 @@
       "expires_in": {
         "const": 900
       },
-      "imei": {
-        "pattern": "^[0-9]{15}$"
+      "device_id": {
+        "format": "uuid"
       }
     },
     "EnrollDevice": {
@@ -1344,8 +1344,8 @@
       }
     },
     "RotationChallengeRequest": {
-      "imei": {
-        "pattern": "^[0-9]{15}$"
+      "device_id": {
+        "format": "uuid"
       }
     },
     "DeviceState": {
@@ -1376,10 +1376,6 @@
           1
         ]
       },
-      "imei": {
-        "pattern": "^[0-9]{15}$",
-        "description": "The single IMEI registered for this device."
-      },
       "key_id": {
         "format": "uuid"
       },
@@ -1405,6 +1401,9 @@
       },
       "status": {
         "description": "Required object only for type=status, otherwise null. Every unknown observation must be null."
+      },
+      "device_id": {
+        "format": "uuid"
       }
     },
     "SpecMeasurement": {
@@ -1473,9 +1472,6 @@
       }
     },
     "MeasurementReceipt": {
-      "imei": {
-        "pattern": "^[0-9]{15}$"
-      },
       "sequence": {
         "minimum": 1
       },
@@ -1487,6 +1483,9 @@
           true
         ],
         "description": "Signature verification succeeded; does not attest measurement truth or chain inclusion."
+      },
+      "device_id": {
+        "format": "uuid"
       }
     },
     "DeviceSummary": {

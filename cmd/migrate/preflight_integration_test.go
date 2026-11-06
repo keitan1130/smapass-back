@@ -22,7 +22,7 @@ func TestPreflightAllowsLaterMigrationsAndRejectsIncompatibleSchema(t *testing.T
 		t.Fatal(err)
 	}
 	var id string
-	if err := db.NewRaw("INSERT INTO devices (imei) VALUES ('490154203237518') RETURNING public_id").Scan(ctx, &id); err != nil {
+	if err := db.NewRaw("INSERT INTO devices (imei) VALUES ('490154203237518') RETURNING id").Scan(ctx, &id); err != nil {
 		t.Fatal(err)
 	}
 	// Version 2 exists only in this test; production migrations are unchanged.
@@ -71,7 +71,7 @@ func TestPreflightAllowsLaterMigrationsAndRejectsIncompatibleSchema(t *testing.T
 		t.Fatalf("rollback to version 1 rejected: %v", err)
 	}
 	var retained string
-	if err = db.NewRaw("SELECT public_id FROM devices WHERE imei='490154203237518'").Scan(ctx, &retained); err != nil || retained != id {
+	if err = db.NewRaw("SELECT id FROM devices WHERE imei='490154203237518'").Scan(ctx, &retained); err != nil || retained != id {
 		t.Fatalf("migration changed device: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "ALTER TABLE key_registration_challenges ADD COLUMN imeis jsonb"); err != nil {
@@ -83,7 +83,7 @@ func TestPreflightAllowsLaterMigrationsAndRejectsIncompatibleSchema(t *testing.T
 	if _, err = db.ExecContext(ctx, "ALTER TABLE key_registration_challenges DROP COLUMN imeis"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.ExecContext(ctx, "ALTER TABLE devices DROP COLUMN public_id"); err != nil {
+	if _, err = db.ExecContext(ctx, "ALTER TABLE devices DROP COLUMN id CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err = preflightBaselineDB(ctx, db.DB); err == nil {

@@ -12,17 +12,17 @@ import (
 	"smapass-back/internal/infrastructure/database/dto"
 )
 
-func imeiByID(ctx context.Context, db bun.IDB, id string) (string, error) {
-	var primary string
-	err := db.NewRaw("SELECT imei FROM devices WHERE public_id=?", id).Scan(ctx, &primary)
+func requireDeviceID(ctx context.Context, db bun.IDB, id string) (string, error) {
+	var deviceID string
+	err := db.NewRaw("SELECT id FROM devices WHERE id=?", id).Scan(ctx, &deviceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", repository.ErrNotFound
 	}
-	return primary, err
+	return deviceID, err
 }
 
 // State remains readable without credentials, including during a sale when no
-// registration is active. All observations are selected by the physical IMEI.
+// registration is active. All observations are selected by the device UUID.
 func (r *Repository) FindState(ctx context.Context, id string, limit, offset int) (*entity.DeviceState, error) {
 	var state *entity.DeviceState
 	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
@@ -35,14 +35,14 @@ func (r *Repository) FindState(ctx context.Context, id string, limit, offset int
 
 func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, includeHistory bool) (*entity.DeviceState, error) {
 	var state entity.DeviceState
-	primary, err := imeiByID(ctx, tx, id)
+	deviceID, err := requireDeviceID(ctx, tx, id)
 	if err != nil {
 		return nil, err
 	}
 	state.ID = id
 	if err := tx.NewRaw(`SELECT CASE WHEN EXISTS
-			(SELECT 1 FROM device_ownerships WHERE imei=? AND ended_at IS NULL)
-			THEN 'active' ELSE 'released' END`, primary).Scan(ctx, &state.RegistrationStatus); err != nil {
+			(SELECT 1 FROM device_ownerships WHERE device_id=? AND ended_at IS NULL)
+			THEN 'active' ELSE 'released' END`, deviceID).Scan(ctx, &state.RegistrationStatus); err != nil {
 		return nil, err
 	}
 	var recording struct {
@@ -52,7 +52,7 @@ func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, in
 		IsDemo           bool
 	}
 	if err := tx.NewRaw(`SELECT count(*) AS record_count, min(collected_at) AS first_collected_at,
-			max(collected_at) AS last_collected_at, COALESCE(bool_or(canonicalization = 'demo-json-sort-v1'), false) AS is_demo FROM device_logs WHERE imei=?`, primary).Scan(ctx, &recording); err != nil {
+			max(collected_at) AS last_collected_at, COALESCE(bool_or(canonicalization = 'demo-json-sort-v1'), false) AS is_demo FROM device_logs WHERE device_id=?`, deviceID).Scan(ctx, &recording); err != nil {
 		return nil, err
 	}
 	state.RecordCount = recording.RecordCount
@@ -63,7 +63,7 @@ func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, in
 	err = tx.NewRaw(`SELECT s.manufacturer,s.model,s.device_name,s.soc,s.cpu_cores,s.ram_bytes,
 			s.storage_bytes,s.screen_size_inch,s.screen_density_dpi,s.collected_at
 			FROM device_specs s JOIN device_logs l ON l.id=s.log_id
-			WHERE s.imei=? ORDER BY l.collected_at DESC,l.seq DESC LIMIT 1`, primary).Scan(ctx, &spec)
+			WHERE s.device_id=? ORDER BY l.collected_at DESC,l.seq DESC LIMIT 1`, deviceID).Scan(ctx, &spec)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, in
 		state.Spec = &spec
 	}
 	var status dto.StatusRecord
-	err = statusQuery(tx, &status).Where("s.imei=?", primary).OrderExpr("l.collected_at DESC,l.seq DESC").Limit(1).Scan(ctx)
+	err = statusQuery(tx, &status).Where("s.device_id=?", deviceID).OrderExpr("l.collected_at DESC,l.seq DESC").Limit(1).Scan(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, in
 		}
 	}
 	if includeHistory {
-		items, total, err := statusHistory(ctx, tx, primary, limit, offset)
+		items, total, err := statusHistory(ctx, tx, deviceID, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -101,13 +101,13 @@ func statusQuery(db bun.IDB, model any) *bun.SelectQuery {
 		Join("JOIN device_logs l ON l.id=s.log_id")
 }
 
-func statusHistory(ctx context.Context, db bun.IDB, primary string, limit, offset int) ([]entity.StatusRecord, int, error) {
+func statusHistory(ctx context.Context, db bun.IDB, deviceID string, limit, offset int) ([]entity.StatusRecord, int, error) {
 	rows := make([]dto.StatusRecord, 0)
 	var total int
-	if err := db.NewRaw("SELECT count(*) FROM device_status WHERE imei=?", primary).Scan(ctx, &total); err != nil {
+	if err := db.NewRaw("SELECT count(*) FROM device_status WHERE device_id=?", deviceID).Scan(ctx, &total); err != nil {
 		return nil, 0, err
 	}
-	if err := statusQuery(db, &rows).Where("s.imei=?", primary).OrderExpr("l.seq ASC").Limit(int64(limit)).Offset(int64(offset)).Scan(ctx); err != nil {
+	if err := statusQuery(db, &rows).Where("s.device_id=?", deviceID).OrderExpr("l.seq ASC").Limit(int64(limit)).Offset(int64(offset)).Scan(ctx); err != nil {
 		return nil, 0, err
 	}
 	items := make([]entity.StatusRecord, 0, len(rows))
@@ -121,12 +121,12 @@ func statusHistory(ctx context.Context, db bun.IDB, primary string, limit, offse
 func (r *Repository) ListStates(ctx context.Context, ids []string) ([]entity.DeviceSummary, error) {
 	items := make([]entity.DeviceSummary, 0)
 	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
-		var primaries []string
-		if err := tx.NewRaw("SELECT public_id FROM devices WHERE public_id IN (?) ORDER BY public_id", bun.In(ids)).Scan(ctx, &primaries); err != nil {
+		var deviceIDs []string
+		if err := tx.NewRaw("SELECT id FROM devices WHERE id IN (?) ORDER BY id", bun.In(ids)).Scan(ctx, &deviceIDs); err != nil {
 			return err
 		}
-		for _, primary := range primaries {
-			state, err := readState(ctx, tx, primary, 0, 0, false)
+		for _, deviceID := range deviceIDs {
+			state, err := readState(ctx, tx, deviceID, 0, 0, false)
 			if err != nil {
 				return err
 			}
@@ -139,6 +139,6 @@ func (r *Repository) ListStates(ctx context.Context, ids []string) ([]entity.Dev
 
 func (r *Repository) Search(ctx context.Context, imeis []string) ([]entity.DeviceReference, error) {
 	items := make([]entity.DeviceReference, 0)
-	err := r.db.NewRaw(`SELECT imei,public_id AS id FROM devices WHERE imei IN (?) ORDER BY imei`, bun.In(imeis)).Scan(ctx, &items)
+	err := r.db.NewRaw(`SELECT imei,id FROM devices WHERE imei IN (?) ORDER BY imei`, bun.In(imeis)).Scan(ctx, &items)
 	return items, err
 }

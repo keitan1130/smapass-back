@@ -1,6 +1,6 @@
 # API 契約
 
-証明書は IMEI にひも付く最新の観測値と全登録期間の履歴。発行・再発行・証明書単位の失効は行わない。同じ URL は新しい計測の保存後に更新される。検索には15桁のIMEIを使い、登録した1個のIMEIから対応する端末固有のランダムUUIDへ解決する。詳細・一括表示・検証ログはUUIDのみで取得する。UUIDは持ち主や鍵の交代で変わらない。
+証明書は端末 UUID にひも付く最新の観測値と全登録期間の履歴。発行・再発行・証明書単位の失効は行わない。同じ URL は新しい計測の保存後に更新される。検索には15桁のIMEIを使い、登録した1個のIMEIから対応する端末固有のランダムUUIDへ解決する。詳細・一括表示・検証ログはUUIDのみで取得する。UUIDは持ち主や鍵の交代で変わらない。
 
 ## 公開参照
 
@@ -46,7 +46,7 @@
 
 ## UUIDで隠せる範囲
 
-UUIDはURL・QR・通常表示でIMEI全桁を出さないための識別子で、アクセス権ではない。検索も履歴も公開のまま。署名対象の元ログにはIMEI全桁が含まれるため、検証用APIではそのまま公開される。削除・マスクすると署名が一致しなくなる。検索・表示にはレート制限、no-store、noindexを適用する。
+UUIDはDB主キー・URL・署名対象で共通の端末識別子で、アクセス権ではない。検索も履歴も公開のまま。計測ログは `schema_version: 1` とし、`device_id` を署名対象に含める。IMEI全桁・所有者情報・認証情報は署名対象に含めず、取り込み時に拒否する。検索・表示にはレート制限、no-store、noindexを適用する。
 
 ## 検証用記録
 
@@ -67,10 +67,10 @@ UUIDはURL・QR・通常表示でIMEI全桁を出さないための識別子で�
 | POST | `/api/devices/key-challenges` | Bearer必須。鍵交換用チャレンジ |
 | POST | `/api/devices` | Bearer必須。attestation付きの鍵交換 |
 | POST | `/api/devices/lookup` | Bearer必須。自分の端末の連番・前ハッシュ・登録状態などを取得 |
-| POST | `/api/devices/{imei}/logs` | Bearer必須。署名付き計測を1件保存。新規201、同一再送200 |
-| POST | `/api/devices/{imei}/revoke` | Bearer必須。登録・鍵・認証を終了し、即時に次の登録を許可。履歴は残す |
+| POST | `/api/devices/{id}/logs` | Bearer必須。署名付き計測を1件保存。新規201、同一再送200 |
+| POST | `/api/devices/{id}/revoke` | Bearer必須。登録・鍵・認証を終了し、即時に次の登録を許可。履歴は残す |
 
-公開検索と `lookup` は別用途。`lookup` の非公開の登録情報を公開APIへ移さない。認証IMEIは登録・更新のTokenPair応答に含まれる。
+公開検索と `lookup` は別用途。`lookup` の非公開の登録情報を公開APIへ移さない。対象の `device_id` は登録・更新のTokenPair応答に含まれる。lookup・鍵交換の本文も `device_id` を使う。
 
 Webの `/certificates/{id}` はHTML・QRの遷移先として使用できる。バックエンドはこのHTMLルートを提供しない。WebはIMEI検索で得たUUIDで端末APIを呼ぶ。
 
@@ -82,4 +82,4 @@ Webの `/certificates/{id}` はHTML・QRの遷移先として使用できる。�
 
 公開APIは直接接続元IP単位のメモリ内レート制限10/秒、書き込み5/秒、認証2/秒。単一インスタンスの開発設定。CORSは明示Originだけ許可し、認可には使用しない。応答は `Cache-Control: no-store`、`X-Robots-Tag: noindex, nofollow`。処理上限5秒、readinessは2秒。URI/query・IMEI・認証情報をアクセスログに残さない。
 
-初回登録・鍵交換・登録終了・ログ送信は登録IMEI1個を使う。鍵交換チャレンジと鍵交換の本文は単一の `imei` とし、配列の `imeis` は受け付けない。検索クエリの `imeis=a,b,c` は複数端末を一括検索する用途として残す。
+初回登録・再登録はIMEI1個を使う。登録後のlookup・鍵交換は本文の `device_id`、ログ送信・登録終了はパスのUUIDを使う。検索クエリの `imeis=a,b,c` は複数端末を一括検索する用途。

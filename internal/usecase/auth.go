@@ -2,6 +2,9 @@ package usecase
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 
 	"smapass-back/internal/domain/entity"
 	"smapass-back/internal/domain/repository"
@@ -21,13 +24,31 @@ func (u *AuthUsecase) Enroll(ctx context.Context, input entity.EnrollDevice) (*e
 	if err != nil {
 		return nil, err
 	}
-	registration := entity.RegisterDevice{IMEI: imei, PublicKey: input.PublicKey, Proof: input.Proof}
-	if err := u.keys.Verify(ctx, "enroll", entity.Principal{}, &registration); err != nil {
+	if err := u.keys.ready(); err != nil {
+		return nil, err
+	}
+	public, err := entity.NormalizePublicKey(input.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(input.Proof.ChallengeID)
+	if err != nil || id.String() != input.Proof.ChallengeID {
+		return nil, entity.ErrChallengeInvalid
+	}
+	challenge, err := u.keys.challenges.Find(ctx, id.String())
+	if err != nil {
+		return nil, err
+	}
+	if !time.Now().Before(challenge.ExpiresAt) || challenge.Purpose != "enroll" || challenge.IMEI != imei || challenge.ConsumedAt != nil || challenge.InstallationID != "" {
+		return nil, entity.ErrChallengeInvalid
+	}
+	verified, err := u.keys.verifier.Verify(ctx, public, input.Proof, challenge)
+	if err != nil {
 		return nil, err
 	}
 	input.IMEI = imei
-	input.PublicKey = registration.PublicKey
-	input.Verified = registration.Verified
+	input.PublicKey = public
+	input.Verified = verified
 	return u.repo.Enroll(ctx, input, entity.NewTokenMaterial())
 }
 

@@ -34,7 +34,7 @@ func (r *measurementRepository) AppendMeasurement(_ context.Context, _ entity.Pr
 	if r.err != nil {
 		return nil, r.err
 	}
-	return &entity.MeasurementReceipt{IMEI: imei, Sequence: log.Payload.Sequence, PayloadHash: hex.EncodeToString(log.Hash[:]),
+	return &entity.MeasurementReceipt{DeviceID: imei, Sequence: log.Payload.Sequence, PayloadHash: hex.EncodeToString(log.Hash[:]),
 		ReceivedAt: time.Now().UTC(), SignatureVerified: true, Duplicate: r.duplicate}, nil
 }
 
@@ -77,12 +77,12 @@ func TestMeasurementRouteAuthenticationParsingAndReceipts(t *testing.T) {
 					if !test.authenticated {
 						return entity.ErrUnauthenticated
 					}
-					c.SetRequest(c.Request().WithContext(interfaceauth.WithPrincipal(c.Request().Context(), entity.Principal{Issuer: entity.DeviceIssuer, Subject: "installation", SessionID: "session", IMEI: "490154203237518"})))
+					c.SetRequest(c.Request().WithContext(interfaceauth.WithPrincipal(c.Request().Context(), entity.Principal{Issuer: entity.DeviceIssuer, Subject: "installation", SessionID: "session", DeviceID: "22222222-2222-4222-8222-222222222222"})))
 					return next(c)
 				}
 			})
 			response := httptest.NewRecorder()
-			app.ServeHTTP(response, httptest.NewRequest("POST", "/api/devices/490154203237518/logs", strings.NewReader(test.body)))
+			app.ServeHTTP(response, httptest.NewRequest("POST", "/api/devices/22222222-2222-4222-8222-222222222222/logs", strings.NewReader(test.body)))
 			if response.Code != test.status || repo.calls != test.calls {
 				t.Fatalf("status=%d calls=%d body=%s", response.Code, repo.calls, response.Body.String())
 			}
@@ -91,7 +91,7 @@ func TestMeasurementRouteAuthenticationParsingAndReceipts(t *testing.T) {
 				if err := json.Unmarshal(response.Body.Bytes(), &receipt); err != nil {
 					t.Fatal(err)
 				}
-				if receipt.Duplicate != test.duplicate || !receipt.SignatureVerified || receipt.IMEI != "490154203237518" {
+				if receipt.Duplicate != test.duplicate || !receipt.SignatureVerified || receipt.DeviceID != "22222222-2222-4222-8222-222222222222" {
 					t.Fatalf("receipt: %+v", receipt)
 				}
 			}

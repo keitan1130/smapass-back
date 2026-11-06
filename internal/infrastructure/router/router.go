@@ -61,8 +61,8 @@ func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authent
 	g.POST("", devices.Register, authenticate)
 	g.POST("/key-challenges", devices.Challenge, authenticate)
 	g.POST("/lookup", devices.Lookup, authenticate)
-	g.POST("/:imei/revoke", devices.Revoke, authenticate)
-	g.POST("/:imei/logs", devices.Ingest, authenticate)
+	g.POST("/:id/revoke", devices.Revoke, authenticate)
+	g.POST("/:id/logs", devices.Ingest, authenticate)
 }
 
 func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController) {
@@ -98,7 +98,7 @@ func writeError(c *echo.Context, err error) {
 	case errors.Is(err, entity.ErrInvalidDeviceID):
 		status, code, message = 400, "invalid_id", "valid device UUID required"
 	case errors.Is(err, entity.ErrInvalidDevice):
-		status, code, message = 400, "invalid_device", "valid IMEI and a P-256 public key are required"
+		status, code, message = 400, "invalid_device", "valid registration data and a P-256 public key are required"
 	case errors.Is(err, entity.ErrDeviceInUse):
 		status, code, message = 409, "device_in_use", "registration requires 3 days without verified logs"
 	case errors.Is(err, entity.ErrDeviceConflict):

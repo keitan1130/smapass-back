@@ -41,14 +41,14 @@ func (u *KeyRegistrationUsecase) RotationChallenge(ctx context.Context, p entity
 	if err := u.ready(); err != nil {
 		return nil, err
 	}
-	imei, err := entity.NormalizeIMEI(input.IMEI)
+	id, err := entity.NormalizeDeviceID(input.DeviceID)
 	if err != nil {
 		return nil, err
 	}
-	return u.challenges.Create(ctx, "rotate", imei, p)
+	return u.challenges.Create(ctx, "rotate", id, p)
 }
 
-func (u *KeyRegistrationUsecase) Verify(ctx context.Context, purpose string, p entity.Principal, input *entity.RegisterDevice) error {
+func (u *KeyRegistrationUsecase) VerifyRotation(ctx context.Context, p entity.Principal, input *entity.RegisterDevice) error {
 	if err := u.ready(); err != nil {
 		return err
 	}
@@ -63,15 +63,11 @@ func (u *KeyRegistrationUsecase) Verify(ctx context.Context, purpose string, p e
 	if err != nil {
 		return err
 	}
-	if !time.Now().Before(challenge.ExpiresAt) || purpose != challenge.Purpose || input.IMEI != challenge.IMEI {
+	if !time.Now().Before(challenge.ExpiresAt) || challenge.Purpose != "rotate" || input.DeviceID != challenge.DeviceID {
 		return entity.ErrChallengeInvalid
 	}
 
-	if purpose == "enroll" {
-		if challenge.ConsumedAt != nil || challenge.InstallationID != "" {
-			return entity.ErrChallengeInvalid
-		}
-	} else if !validPrincipal(p) || challenge.InstallationID != p.Subject || challenge.IMEI != p.IMEI {
+	if !validPrincipal(p) || challenge.InstallationID != p.Subject || challenge.DeviceID != p.DeviceID {
 		return entity.ErrChallengeInvalid
 	}
 	verified, err := u.verifier.Verify(ctx, input.PublicKey, input.Proof, challenge)

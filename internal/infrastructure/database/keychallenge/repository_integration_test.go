@@ -5,6 +5,7 @@ package keychallenge_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -45,17 +46,31 @@ func TestChallengeReplayExpiryAndAtomicRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	devices := usecase.NewDeviceUsecase(device.NewRepository(db), keys)
-	before, err := devices.Lookup(ctx, p, p.IMEI)
+	before, err := devices.Lookup(ctx, p, p.DeviceID)
 	if err != nil || !before.KeyAttested || before.IMEIAttested {
 		t.Fatalf("attestation state: %+v %v", before, err)
 	}
-	rotation := testutil.Rotation(t, db, p, p.IMEI)
+	rotation := testutil.Rotation(t, db, p, p.DeviceID)
+	var binding struct {
+		SigningPayload []byte
+		Bound          bool
+	}
+	if err := db.NewRaw(`SELECT signing_payload,(imei IS NULL AND device_id=?) AS bound FROM key_registration_challenges WHERE id=?`, p.DeviceID, rotation.Proof.ChallengeID).Scan(ctx, &binding); err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(binding.SigningPayload, &envelope); err != nil || !binding.Bound || envelope["device_id"] != p.DeviceID || envelope["protocol"] != "smapass-key-registration-v3" {
+		t.Fatalf("rotation UUID binding: %+v %v", envelope, err)
+	}
+	if _, exists := envelope["imei"]; exists {
+		t.Fatal("rotation proof includes IMEI")
+	}
 	invalid := rotation
 	invalid.Proof.SignatureDER = input.Proof.SignatureDER
 	if _, err = devices.Register(ctx, p, invalid); !errors.Is(err, entity.ErrAttestationRejected) {
 		t.Fatalf("invalid rotation accepted: %v", err)
 	}
-	unchanged, err := devices.Lookup(ctx, p, p.IMEI)
+	unchanged, err := devices.Lookup(ctx, p, p.DeviceID)
 	if err != nil || unchanged.KeyID != before.KeyID {
 		t.Fatal("failed rotation replaced active key")
 	}
@@ -77,8 +92,8 @@ func TestChallengeReplayExpiryAndAtomicRollback(t *testing.T) {
 		t.Fatalf("expired challenge accepted: %v", err)
 	}
 	// A valid enroll proof cannot be used for a different purpose or IMEI.
-	swapped := testutil.Enrollment(t, db, p.IMEI)
-	if _, err = devices.Register(ctx, p, entity.RegisterDevice{IMEI: p.IMEI, PublicKey: swapped.PublicKey, Proof: swapped.Proof}); !errors.Is(err, entity.ErrChallengeInvalid) {
+	swapped := testutil.ReEnrollment(t, db, p.DeviceID)
+	if _, err = devices.Register(ctx, p, entity.RegisterDevice{DeviceID: p.DeviceID, PublicKey: swapped.PublicKey, Proof: swapped.Proof}); !errors.Is(err, entity.ErrChallengeInvalid) {
 		t.Fatalf("purpose substitution accepted: %v", err)
 	}
 	swapped.IMEI = "356938035643809"
@@ -115,7 +130,7 @@ func TestConcurrentEnrollmentProofIsSingleUse(t *testing.T) {
 		t.Fatalf("proof replay results: %d/%d", success, rejected)
 	}
 	var count int
-	if err := db.NewRaw("SELECT count(*) FROM app_installations WHERE imei=?", input.IMEI).Scan(ctx, &count); err != nil || count != 1 {
+	if err := db.NewRaw("SELECT count(*) FROM app_installations WHERE device_id=(SELECT id FROM devices WHERE imei=?)", input.IMEI).Scan(ctx, &count); err != nil || count != 1 {
 		t.Fatalf("duplicate credential issuance: %d %v", count, err)
 	}
 }

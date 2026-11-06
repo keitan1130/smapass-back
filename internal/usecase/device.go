@@ -10,11 +10,11 @@ import (
 	"smapass-back/internal/domain/repository"
 )
 
-func (u *DeviceUsecase) Ingest(ctx context.Context, principal entity.Principal, inputIMEI string, input entity.SubmitMeasurement) (*entity.MeasurementReceipt, error) {
+func (u *DeviceUsecase) Ingest(ctx context.Context, principal entity.Principal, inputID string, input entity.SubmitMeasurement) (*entity.MeasurementReceipt, error) {
 	if !validPrincipal(principal) {
 		return nil, entity.ErrUnauthenticated
 	}
-	imei, err := entity.NormalizeIMEI(inputIMEI)
+	deviceID, err := entity.NormalizeDeviceID(inputID)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,7 @@ func (u *DeviceUsecase) Ingest(ctx context.Context, principal entity.Principal, 
 	if err != nil {
 		return nil, err
 	}
-	return u.repo.AppendMeasurement(ctx, principal, imei, log)
+	return u.repo.AppendMeasurement(ctx, principal, deviceID, log)
 }
 
 type DeviceUsecase struct {
@@ -35,14 +35,14 @@ func NewDeviceUsecase(repo repository.DeviceRepository, keys *KeyRegistrationUse
 }
 
 func validPrincipal(p entity.Principal) bool {
-	return p.Issuer == entity.DeviceIssuer && p.Subject != "" && p.SessionID != "" && p.IMEI != ""
+	return p.Issuer == entity.DeviceIssuer && p.Subject != "" && p.SessionID != "" && p.DeviceID != ""
 }
 
 func (u *DeviceUsecase) Register(ctx context.Context, principal entity.Principal, input entity.RegisterDevice) (*entity.Device, error) {
 	if !validPrincipal(principal) {
 		return nil, entity.ErrInvalidDevice
 	}
-	if err := u.keys.Verify(ctx, "rotate", principal, &input); err != nil {
+	if err := u.keys.VerifyRotation(ctx, principal, &input); err != nil {
 		return nil, err
 	}
 	return u.repo.Register(ctx, principal, input)
@@ -56,22 +56,22 @@ func (u *DeviceUsecase) Lookup(ctx context.Context, principal entity.Principal, 
 	if !validPrincipal(principal) {
 		return nil, entity.ErrInvalidDevice
 	}
-	imei, err := entity.NormalizeIMEI(input)
+	deviceID, err := entity.NormalizeDeviceID(input)
 	if err != nil {
 		return nil, err
 	}
-	return u.repo.FindOwned(ctx, principal, imei)
+	return u.repo.FindOwned(ctx, principal, deviceID)
 }
 
 func (u *DeviceUsecase) Revoke(ctx context.Context, principal entity.Principal, input string) error {
 	if !validPrincipal(principal) {
 		return entity.ErrInvalidDevice
 	}
-	imei, err := entity.NormalizeIMEI(input)
+	deviceID, err := entity.NormalizeDeviceID(input)
 	if err != nil {
 		return err
 	}
-	return u.repo.Revoke(ctx, principal, imei)
+	return u.repo.Revoke(ctx, principal, deviceID)
 }
 
 func (u *DeviceUsecase) State(ctx context.Context, input string, limit, offset int) (*entity.DeviceState, error) {

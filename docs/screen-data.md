@@ -15,4 +15,4 @@ IMEI検索でUUIDに解決し、証明書ページはUUIDで最新情報と全�
 
 評価、欠測判定、整備記録、出品先の更新は未実装。旧スナップショットのデモA評価は返さない。未知の値はnullのまま扱う。外部RPC照合も未実装なので、取得成功だけで「改ざんなし」と表示しない。ブックマークとメモはWebのブラウザ保存。
 
-IMEIは `/api/devices/search?imeis=a,b,c` でUUIDに解決する。通常の表示データとページURLはUUIDを使う。署名対象の元ログにはIMEIが残る。
+IMEIは `/api/devices/search?imeis=a,b,c` でUUIDに解決する。通常の表示データとページURLはUUIDを使う。公開署名対象も端末UUIDを使い、IMEI全桁を含めない。

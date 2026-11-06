@@ -22,7 +22,7 @@ func preflightBaseline(dsn string) error {
 func preflightBaselineDB(ctx context.Context, database *sql.DB) error {
 	var legacy bool
 	err := database.QueryRowContext(ctx, `SELECT (to_regclass('public.devices') IS NOT NULL AND NOT EXISTS
-	 (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='public_id'))
+	 (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='id'))
 	 OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
 	 AND table_name='key_registration_challenges' AND column_name='imeis')`).Scan(&legacy)
 	if err != nil {

@@ -33,12 +33,12 @@ func insertLogAt(ctx context.Context, db *bun.DB, device *entity.Device, seq int
 		marker = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
 	// This is a database-level fixture, not a signature-verification implementation.
-	_, err := db.ExecContext(ctx, `INSERT INTO device_logs (imei, ownership_id, key_id, seq, type,
+	_, err := db.ExecContext(ctx, `INSERT INTO device_logs (device_id, ownership_id, key_id, seq, type,
 		canonicalization, canonical_payload, payload, payload_hash, prev_hash, signature, collected_at, received_at, signature_verified_at)
 		VALUES (?, ?, ?, ?, 'status', 'test', ?, ?::jsonb, sha256(convert_to(?, 'UTF8')),
-		(SELECT payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), ?, '2000-01-01', ?)`,
-		device.IMEI, device.OwnershipID, device.KeyID, seq, `{"seq":`+strconv.Itoa(seq)+`}`, `{"seq":`+strconv.Itoa(seq)+`}`,
-		`{"seq":`+strconv.Itoa(seq)+`}`, device.IMEI, collectedAt, marker)
+		(SELECT payload_hash FROM device_logs WHERE device_id=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), ?, '2000-01-01', ?)`,
+		device.DeviceID, device.OwnershipID, device.KeyID, seq, `{"seq":`+strconv.Itoa(seq)+`}`, `{"seq":`+strconv.Itoa(seq)+`}`,
+		`{"seq":`+strconv.Itoa(seq)+`}`, device.DeviceID, collectedAt, marker)
 	return err
 }
 
@@ -61,7 +61,7 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	ctx := context.Background()
 	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, old, a := credentials(t, db, "490154203237518")
-	request := input(t, db, a, "490154203237518")
+	request := input(t, db, a, a.DeviceID)
 	first, err := u.Register(ctx, a, request)
 	if err != nil {
 		t.Fatal(err)
@@ -73,52 +73,52 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if err != nil || again.OwnershipID != first.OwnershipID || !again.RegisteredAt.Equal(first.RegisteredAt) {
 		t.Fatalf("idempotency failed: %v", err)
 	}
-	rotated, err := u.Register(ctx, a, input(t, db, a, request.IMEI))
+	rotated, err := u.Register(ctx, a, input(t, db, a, request.DeviceID))
 	if err != nil || rotated.KeyID == first.KeyID || rotated.OwnershipID != first.OwnershipID {
 		t.Fatalf("key rotation: %v", err)
 	}
-	if _, err = u.Lookup(ctx, a, request.IMEI); err != nil {
+	if _, err = u.Lookup(ctx, a, request.DeviceID); err != nil {
 		t.Fatal(err)
 	}
 	_, _, other := credentials(t, db, "000000000094821")
-	if _, err = u.Lookup(ctx, other, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
+	if _, err = u.Lookup(ctx, other, first.DeviceID); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation lookup: %v", err)
 	}
-	if _, err = u.Challenge(ctx, other, entity.RotationChallengeRequest{IMEI: first.IMEI}); !errors.Is(err, repository.ErrNotFound) {
+	if _, err = u.Challenge(ctx, other, entity.RotationChallengeRequest{DeviceID: first.DeviceID}); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation write: %v", err)
 	}
-	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.ReEnrollment(t, db, request.DeviceID)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("early reclaim: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '71 hours' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.ReEnrollment(t, db, request.DeviceID)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("reclaimed before 72 hours: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '3 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
-	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEI))
-	if err != nil || next.IMEI != first.IMEI {
+	next, err := auth.Enroll(ctx, testutil.ReEnrollment(t, db, request.DeviceID))
+	if err != nil || next.DeviceID != first.DeviceID {
 		t.Fatalf("reclaim: %v", err)
 	}
 	b, err := auth.Authenticate(ctx, next.AccessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := u.Register(ctx, b, input(t, db, b, request.IMEI))
+	claimed, err := u.Register(ctx, b, input(t, db, b, request.DeviceID))
 	if err != nil || claimed.OwnershipID == first.OwnershipID {
 		t.Fatalf("key after reclaim: %v", err)
 	}
 	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("old credential accepted: %v", err)
 	}
-	if _, err = u.Lookup(ctx, a, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
+	if _, err = u.Lookup(ctx, a, first.DeviceID); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("old owner lookup: %v", err)
 	}
 	var active int
-	if err = db.NewRaw("SELECT count(*) FROM device_keys WHERE imei=? AND revoked_at IS NULL", first.IMEI).Scan(ctx, &active); err != nil || active != 1 {
+	if err = db.NewRaw("SELECT count(*) FROM device_keys WHERE device_id=? AND revoked_at IS NULL", first.DeviceID).Scan(ctx, &active); err != nil || active != 1 {
 		t.Fatalf("active keys=%d: %v", active, err)
 	}
 }
@@ -128,7 +128,7 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	ctx := context.Background()
 	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, _, a := credentials(t, db, "490154203237518")
-	first, err := u.Register(ctx, a, input(t, db, a, a.IMEI))
+	first, err := u.Register(ctx, a, input(t, db, a, a.DeviceID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,11 +138,11 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	if err = insertLog(ctx, db, first, 1, true); err != nil {
 		t.Fatal(err)
 	}
-	observed, err := u.Lookup(ctx, a, first.IMEI)
+	observed, err := u.Lookup(ctx, a, first.DeviceID)
 	if err != nil || observed.LastVerifiedLogAt == nil || !observed.ReclaimableAt.Equal(observed.LastVerifiedLogAt.Add(72*time.Hour)) {
 		t.Fatalf("verified-log deadline: %+v %v", observed, err)
 	}
-	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, first.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.ReEnrollment(t, db, first.DeviceID)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("verified activity ignored: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET last_verified_log_at=now()-interval '3 days' WHERE id=?", first.OwnershipID); err != nil {
@@ -153,7 +153,7 @@ func TestVerifiedActivityAndConcurrentClaims(t *testing.T) {
 	}
 	errorsCh := make(chan error, 2)
 	var wg sync.WaitGroup
-	requests := []entity.EnrollDevice{testutil.Enrollment(t, db, first.IMEI), testutil.Enrollment(t, db, first.IMEI)}
+	requests := []entity.EnrollDevice{testutil.ReEnrollment(t, db, first.DeviceID), testutil.ReEnrollment(t, db, first.DeviceID)}
 	for i := range 2 {
 		wg.Add(1)
 		go func() {
@@ -202,7 +202,7 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	ctx := context.Background()
 	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, old, a := credentials(t, db, "490154203237518")
-	first, err := u.Register(ctx, a, input(t, db, a, a.IMEI))
+	first, err := u.Register(ctx, a, input(t, db, a, a.DeviceID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,23 +210,23 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, other := credentials(t, db, "000000000094821")
-	if err = u.Revoke(ctx, other, a.IMEI); !errors.Is(err, repository.ErrNotFound) {
+	if err = u.Revoke(ctx, other, a.DeviceID); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation revoked: %v", err)
 	}
-	if err = u.Revoke(ctx, a, a.IMEI); err != nil {
+	if err = u.Revoke(ctx, a, a.DeviceID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("revoked installation authenticated: %v", err)
 	}
-	items, total, err := NewRepository(db).Records(ctx, publicID(t, db, a.IMEI), 100, 0)
+	items, total, err := NewRepository(db).Records(ctx, a.DeviceID, 100, 0)
 	if err != nil || total != 1 || len(items) != 1 {
 		t.Fatalf("evidence lost on release: %d %v", total, err)
 	}
 	if err = insertLog(ctx, db, first, 2, true); err == nil {
 		t.Fatal("revoked key accepted")
 	}
-	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, a.IMEI))
+	next, err := auth.Enroll(ctx, testutil.ReEnrollment(t, db, a.DeviceID))
 	if err != nil {
 		t.Fatalf("immediate reclaim: %v", err)
 	}
@@ -234,10 +234,10 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = u.Register(ctx, b, input(t, db, b, a.IMEI)); err != nil {
+	if _, err = u.Register(ctx, b, input(t, db, b, a.DeviceID)); err != nil {
 		t.Fatal(err)
 	}
-	if err = u.Revoke(ctx, a, a.IMEI); !errors.Is(err, entity.ErrUnauthenticated) {
+	if err = u.Revoke(ctx, a, a.DeviceID); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("old session revoked new owner: %v", err)
 	}
 }

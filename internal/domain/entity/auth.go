@@ -27,7 +27,7 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 type TokenPair struct {
-	IMEI             string    `json:"imei"`
+	DeviceID         string    `json:"device_id"`
 	AccessToken      string    `json:"access_token"`
 	RefreshToken     string    `json:"refresh_token"`
 	TokenType        string    `json:"token_type"`

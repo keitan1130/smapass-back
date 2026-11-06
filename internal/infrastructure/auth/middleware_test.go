@@ -22,7 +22,7 @@ func TestBearerMiddleware(t *testing.T) {
 		e := echo.New()
 		e.GET("/private", func(c *echo.Context) error {
 			p, ok := requestauth.Principal(c.Request().Context())
-			if !ok || p.IMEI != "490154203237518" {
+			if !ok || p.DeviceID != "22222222-2222-4222-8222-222222222222" {
 				t.Fatal("principal missing")
 			}
 			return c.NoContent(200)
@@ -30,7 +30,7 @@ func TestBearerMiddleware(t *testing.T) {
 			if raw != token {
 				t.Fatal("unparsed token")
 			}
-			return entity.Principal{Issuer: entity.DeviceIssuer, Subject: "installation", SessionID: "session", IMEI: "490154203237518"}, tc.failure
+			return entity.Principal{Issuer: entity.DeviceIssuer, Subject: "installation", SessionID: "session", DeviceID: "22222222-2222-4222-8222-222222222222"}, tc.failure
 		}))
 		// Use Echo's HTTP errors for this middleware-only test.
 		e.HTTPErrorHandler = func(c *echo.Context, err error) {

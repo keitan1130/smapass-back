@@ -10,7 +10,7 @@
 
 `payload` JSONB はキー順や数値表現を保持しないため署名の正本にしない。`canonical_payload` に公開可能な署名対象 JSON の UTF-8 バイト列を文字列として保存し、API でもその文字列を返す。ハッシュは SHA-256、DB の `payload_hash` と一致するかを検査する。データの正規化・署名の妥当性は別に確認する必要がある。
 
-計測ログの署名対象は [計測ログ送信](measurement-ingestion.md) のバージョン1 envelope。登録IMEI、鍵ID、端末全体の連番、種別、取得時刻、前ハッシュ、公開計測値を含める。送信されたJCS正本のUTF-8バイト列をそのまま検証・保存し、DBカラムと投影はその検証済みenvelopeから作る。
+計測ログの署名対象は [計測ログ送信](measurement-ingestion.md) のバージョン1 envelope。端末UUID、鍵ID、端末全体の連番、種別、取得時刻、前ハッシュ、公開計測値を含める。送信されたJCS正本のUTF-8バイト列をそのまま検証・保存し、DBカラムと投影はその検証済みenvelopeから作る。
 取り込みでは形式検証後、次の保存処理を同じトランザクションで行う：
 
 1. 認証と端末への権限、鍵の有効期間・署名方式・必要な attestation を確認。
@@ -30,14 +30,14 @@ JSON のキーを独自にソートするだけで RFC 8785 対応としない�
 | leaf / node | ハッシュの対象・並び順・domain separation、奇数 leaf の処理、proof の左右 |
 | Ethereum を使う場合 | contract address、ABI、event と root / leaf の対応、ブロック番号 |
 | 再送と障害 | idempotency key、送信済み tx の再確認、retry / backoff、reorg、失敗と pending の区別 |
-| 計測ログ署名 | バージョン1はJCS envelope・P-256 SHA256withECDSA・標準Base64のASN.1 DER。鍵登録・交代・初期化後再登録は [Android 鍵登録](android-key-registration.md) を参照 |
+| 計測ログ署名 | バージョン1は端末UUID入りのJCS envelope・P-256 SHA256withECDSA・標準Base64のASN.1 DER。鍵登録・交代・初期化後再登録は [Android 鍵登録](android-key-registration.md) を参照 |
 | 公開範囲 | 公開ログから除外する情報と、公開可能な署名 envelope |
 
 `anchors.confirmed` はサーバーが保存した状態であり、ブラウザ検証の結果ではない。ブラウザは canonical_payload の SHA-256 を計算し、別経路の RPC で取得したチェーン情報と照合する。「一致」「不一致」「照合できず」を区別する。チェーンにハッシュがあっても計測値自体の真実性は保証しない。
 
 ## 個人情報
 
-公開後のログから IMEI 全桁や秘密情報だけを削っても元の署名・ハッシュは一致しなくなる。IMEI は公開 URL に使う方針だが、所有者の識別情報・認証情報などは公開用の署名対象に含めない。attestation / os_proof は非公開の別カラムに置き、そのまま `/records` へ流さない。公開 API は端末の内部 ID や attestation を返さないが、canonical_payload の中に含めれば漏れるため、取り込み時の許可リストが必要。IMEI による公開参照を認めることと、所有者情報を公開することは別に扱う。
+公開署名対象は `schema_version: 1` の端末UUID・鍵ID・連番・日時・前ハッシュ・計測値とする。IMEI全桁・所有者情報・認証情報は含めない。取り込み時の厳密な許可リストで拒否する。`attestation` / `os_proof` は非公開の別カラムに置き、`/records` へ流さない。検証APIは保存した `canonical_payload` をそのまま返し、公開時にフィールドを削ったり再エンコードしたりしない。
 
 出品情報と IMEI 末尾は照合の補助。本人確認と認可による更新制限は今後実装するものであり、チェーンが出品者の申告を保証するものではない。
 
