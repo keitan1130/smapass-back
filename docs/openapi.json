@@ -53,9 +53,18 @@
           "registered_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "visibility": {
+            "description": "Effective visibility. Defaults to private for a new holder; public while reclaimable even if the stored setting is private.",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "type": "string"
           }
         },
         "required": [
+          "visibility",
           "device_id",
           "ownership_id",
           "registered_at",
@@ -405,6 +414,26 @@
           "spec",
           "status",
           "is_demo"
+        ],
+        "type": "object"
+      },
+      "DeviceVisibility": {
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "private"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "visibility"
         ],
         "type": "object"
       },
@@ -1145,6 +1174,21 @@
         ],
         "type": "object"
       },
+      "UpdateDeviceVisibility": {
+        "properties": {
+          "visibility": {
+            "enum": [
+              "public",
+              "private"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "type": "object"
+      },
       "VerificationRecord": {
         "properties": {
           "anchor_state": {
@@ -1572,7 +1616,7 @@
     },
     "/api/devices": {
       "get": {
-        "description": "Display API. UUIDs only; use /api/devices/search?imeis=... first. Deduplicates UUIDs, sorts by UUID, omits unknown devices and returns items: [] when none match. Latest summaries exclude history. Specs and status are selected independently by collected_at descending, then sequence descending for equal timestamps. Late older observations remain in history without replacing current observations; history and evidence retain sequence order. last_collected_at is the maximum collection time across all log types, not necessarily the status collection time.",
+        "description": "Display API. UUIDs only; use /api/devices/search?imeis=... first. Deduplicates UUIDs, sorts by UUID, omits unknown devices and returns items: [] when none match. Latest summaries exclude history. Specs and status are selected independently by collected_at descending, then sequence descending for equal timestamps. Late older observations remain in history without replacing current observations; history and evidence retain sequence order. last_collected_at is the maximum collection time across all log types, not necessarily the status collection time. Private active devices are hidden: search and summaries omit them, state and records return 404. Released or reclaimable devices are public. The reclaimable period starts exactly 72 hours after the last verified log receipt, or registration start if no verified log exists.",
         "operationId": "listDevices",
         "parameters": [
           {
@@ -1939,7 +1983,7 @@
     },
     "/api/devices/search": {
       "get": {
-        "description": "IMEI search only. Returns one stable device UUID per known IMEI. Deduplicates identical inputs, omits unknown IMEIs, no history or state. Invalid/empty IMEIs and more than 50 inputs return 400.",
+        "description": "IMEI search only. Returns one stable device UUID per known IMEI. Deduplicates identical inputs, omits unknown IMEIs, no history or state. Invalid/empty IMEIs and more than 50 inputs return 400. Private active devices are hidden: search and summaries omit them, state and records return 404. Released or reclaimable devices are public. The reclaimable period starts exactly 72 hours after the last verified log receipt, or registration start if no verified log exists.",
         "operationId": "searchDevicesByIMEI",
         "parameters": [
           {
@@ -2030,7 +2074,7 @@
     },
     "/api/devices/{id}": {
       "get": {
-        "description": "Public live certificate by stable device UUID. Includes latest known observations, last collection time, demo flag and paginated status history across all registrants. Missing observations are null; a known device without measurements has an empty history. Registration release does not hide history. No owner identity, credentials, private attestation is returned. This response alone is not proof of verification. Specs and status are selected independently by collected_at descending, then sequence descending for equal timestamps. Late older observations remain in history without replacing current observations; history and evidence retain sequence order. last_collected_at is the maximum collection time across all log types, not necessarily the status collection time.",
+        "description": "Public live certificate by stable device UUID. Includes latest known observations, last collection time, demo flag and paginated status history across all registrants. Missing observations are null; a known device without measurements has an empty history. Registration release does not hide history. No owner identity, credentials, private attestation is returned. This response alone is not proof of verification. Specs and status are selected independently by collected_at descending, then sequence descending for equal timestamps. Late older observations remain in history without replacing current observations; history and evidence retain sequence order. last_collected_at is the maximum collection time across all log types, not necessarily the status collection time. Private active devices are hidden: search and summaries omit them, state and records return 404. Released or reclaimable devices are public. The reclaimable period starts exactly 72 hours after the last verified log receipt, or registration start if no verified log exists.",
         "operationId": "getDevice",
         "parameters": [
           {
@@ -2278,7 +2322,7 @@
     },
     "/api/devices/{id}/records": {
       "get": {
-        "description": "All stored logs across all registrants. Sequence ascending with pagination. Canonical payload, hashes and signatures support separate verification. Demo logs are not verified evidence. Known devices without logs return an empty page. Unknown UUID returns 404.",
+        "description": "All stored logs across all registrants. Sequence ascending with pagination. Canonical payload, hashes and signatures support separate verification. Demo logs are not verified evidence. Known devices without logs return an empty page. Unknown UUID returns 404. Private active devices are hidden: search and summaries omit them, state and records return 404. Released or reclaimable devices are public. The reclaimable period starts exactly 72 hours after the last verified log receipt, or registration start if no verified log exists.",
         "operationId": "getDeviceRecords",
         "parameters": [
           {
@@ -2464,6 +2508,121 @@
           }
         ],
         "summary": "Release current device registration and revoke credentials and keys; preserve lifetime device history"
+      }
+    },
+    "/api/devices/{id}/visibility": {
+      "patch": {
+        "description": "Bearer token required. Only the current holder can change public/private after device locking and transactional credential revalidation. Enrollment and holder changes default to private. No active registration or 72 hours since the last verified log receipt (registration start if none) makes the device effectively public regardless of its setting. Setting visibility does not extend that time. New verified logs resume the saved setting; token refresh, key rotation and exact retries do not. Private requests during the reclaimable period return 409. Private devices are omitted from public IMEI search and summaries, and return 404 for state and evidence. Public/private applies to the entire device lifetime history.",
+        "operationId": "updateDeviceVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDeviceVisibility"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceVisibility"
+                }
+              }
+            },
+            "description": "Effective device visibility"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid UUID, JSON or visibility"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid or stale credentials"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unknown device or another holder device"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Reclaimable devices must remain public; send a new verified log before making private"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Database unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Change the current holder device visibility"
       }
     },
     "/health": {

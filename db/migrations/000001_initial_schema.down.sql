@@ -1,4 +1,5 @@
 BEGIN;
+DROP VIEW public_devices;
 DROP TABLE device_status, device_specs, log_anchors;
 DROP TABLE device_logs;
 DROP FUNCTION reject_evidence_change(), guard_owned_log(), touch_verified_log();

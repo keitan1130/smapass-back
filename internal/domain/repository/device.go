@@ -14,5 +14,6 @@ type DeviceRepository interface {
 	Records(context.Context, string, int, int) ([]entity.VerificationRecord, int, error)
 	Register(context.Context, entity.Principal, entity.RegisterDevice) (*entity.Device, error)
 	FindOwned(context.Context, entity.Principal, string) (*entity.Device, error)
+	SetVisibility(context.Context, entity.Principal, string, string) (*entity.DeviceVisibility, error)
 	Revoke(context.Context, entity.Principal, string) error
 }

@@ -20,9 +20,11 @@ func DeviceReclaimableAt(registeredAt time.Time, lastVerifiedLogAt *time.Time) t
 }
 
 var (
-	ErrInvalidDevice  = errors.New("invalid device registration")
-	ErrDeviceInUse    = errors.New("device registration is still active")
-	ErrDeviceConflict = errors.New("device identifiers or key conflict")
+	ErrInvalidDevice     = errors.New("invalid device registration")
+	ErrDeviceInUse       = errors.New("device registration is still active")
+	ErrInvalidVisibility = errors.New("visibility must be public or private")
+	ErrVisibilityLocked  = errors.New("a reclaimable device must remain public")
+	ErrDeviceConflict    = errors.New("device identifiers or key conflict")
 )
 
 // Principal is supplied only by the verified authentication adapter.
@@ -35,7 +37,17 @@ type RegisterDevice struct {
 	Verified  *VerifiedKey `json:"-"`
 }
 
+type UpdateDeviceVisibility struct {
+	Visibility string `json:"visibility"`
+}
+
+type DeviceVisibility struct {
+	DeviceID   string `json:"device_id"`
+	Visibility string `json:"visibility"`
+}
+
 type Device struct {
+	Visibility        string     `json:"visibility"`
 	DeviceID          string     `json:"device_id"`
 	OwnershipID       int64      `json:"ownership_id"`
 	RegisteredAt      time.Time  `json:"registered_at"`

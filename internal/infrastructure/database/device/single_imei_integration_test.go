@@ -42,6 +42,16 @@ func TestRegisteredIMEIsHaveIndependentStableUUIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	next, err := auth.Authenticate(ctx, pair.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state, err := r.FindOwned(ctx, next, next.DeviceID); err != nil || state.Visibility != "private" {
+		t.Fatalf("new holder default: %+v %v", state, err)
+	}
+	if _, err := u.SetVisibility(ctx, next, next.DeviceID, "public"); err != nil {
+		t.Fatal(err)
+	}
 	if pair.DeviceID != first.DeviceID || publicID(t, db, "490154203237518") != ids["490154203237518"] || publicID(t, db, "356938035643809") != ids["356938035643809"] {
 		t.Fatal("re-registration changed UUID mapping")
 	}

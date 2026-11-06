@@ -63,6 +63,9 @@ func measurementSession(t *testing.T, db *bun.DB, imei string) (*entity.TokenPai
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := NewRepository(db).SetVisibility(ctx, p, p.DeviceID, "public"); err != nil {
+		t.Fatal(err)
+	}
 	device, err := NewRepository(db).FindOwned(ctx, p, p.DeviceID)
 	if err != nil {
 		t.Fatal(err)

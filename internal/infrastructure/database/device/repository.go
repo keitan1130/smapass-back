@@ -120,6 +120,9 @@ func (r *Repository) Revoke(ctx context.Context, principal entity.Principal, dev
 		if _, err := tx.ExecContext(ctx, "UPDATE device_ownerships SET ended_at = ? WHERE id = ?", now, id); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, "UPDATE devices SET visibility='private' WHERE id=?", deviceID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "UPDATE app_installations SET revoked_at=? WHERE ownership_id=? AND revoked_at IS NULL", now, id); err != nil {
 			return err
 		}
@@ -132,7 +135,9 @@ func (r *Repository) Revoke(ctx context.Context, principal entity.Principal, dev
 
 func findOwned(ctx context.Context, db bun.IDB, principal entity.Principal, deviceID string) (*entity.Device, error) {
 	var result entity.Device
-	err := db.NewRaw(`SELECT d.id AS device_id, o.id AS ownership_id, o.started_at AS registered_at,
+	err := db.NewRaw(`SELECT d.id AS device_id,
+        CASE WHEN COALESCE(o.last_verified_log_at,o.started_at) + interval '72 hours' <= clock_timestamp()
+            THEN 'public' ELSE d.visibility END AS visibility, o.id AS ownership_id, o.started_at AS registered_at,
 		o.last_verified_log_at,
 		COALESCE(last_log.seq,0)+1 AS next_sequence, encode(last_log.payload_hash,'hex') AS previous_hash,
         k.id AS key_id,(k.attestation_verified_at IS NOT NULL) AS key_attested,k.imei_attested FROM devices d

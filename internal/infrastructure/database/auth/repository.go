@@ -68,6 +68,9 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 				return err
 			}
 		}
+		if _, err := tx.ExecContext(ctx, "UPDATE devices SET visibility='private' WHERE id=?", deviceID); err != nil {
+			return err
+		}
 		installation := uuid.NewString()
 		var ownership int64
 		if err := tx.NewRaw("INSERT INTO device_ownerships (device_id,owner_issuer,owner_subject,started_at) VALUES (?,?,?,?) RETURNING id", deviceID, entity.DeviceIssuer, installation, now).Scan(ctx, &ownership); err != nil {

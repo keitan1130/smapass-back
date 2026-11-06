@@ -14,7 +14,7 @@ import (
 
 func requireDeviceID(ctx context.Context, db bun.IDB, id string) (string, error) {
 	var deviceID string
-	err := db.NewRaw("SELECT id FROM devices WHERE id=?", id).Scan(ctx, &deviceID)
+	err := db.NewRaw("SELECT id FROM public_devices WHERE id=?", id).Scan(ctx, &deviceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", repository.ErrNotFound
 	}
@@ -122,7 +122,7 @@ func (r *Repository) ListStates(ctx context.Context, ids []string) ([]entity.Dev
 	items := make([]entity.DeviceSummary, 0)
 	err := r.db.RunInTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(ctx context.Context, tx bun.Tx) error {
 		var deviceIDs []string
-		if err := tx.NewRaw("SELECT id FROM devices WHERE id IN (?) ORDER BY id", bun.In(ids)).Scan(ctx, &deviceIDs); err != nil {
+		if err := tx.NewRaw("SELECT id FROM public_devices WHERE id IN (?) ORDER BY id", bun.In(ids)).Scan(ctx, &deviceIDs); err != nil {
 			return err
 		}
 		for _, deviceID := range deviceIDs {
@@ -139,6 +139,6 @@ func (r *Repository) ListStates(ctx context.Context, ids []string) ([]entity.Dev
 
 func (r *Repository) Search(ctx context.Context, imeis []string) ([]entity.DeviceReference, error) {
 	items := make([]entity.DeviceReference, 0)
-	err := r.db.NewRaw(`SELECT imei,id FROM devices WHERE imei IN (?) ORDER BY imei`, bun.In(imeis)).Scan(ctx, &items)
+	err := r.db.NewRaw(`SELECT imei,id FROM public_devices WHERE imei IN (?) ORDER BY imei`, bun.In(imeis)).Scan(ctx, &items)
 	return items, err
 }

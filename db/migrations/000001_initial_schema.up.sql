@@ -6,6 +6,7 @@ BEGIN;
 CREATE TABLE devices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     imei TEXT NOT NULL UNIQUE CHECK (imei ~ '^[0-9]{15}$'),
+    visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('public','private')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -236,5 +237,14 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER verified_log_activity AFTER INSERT ON device_logs FOR EACH ROW EXECUTE FUNCTION touch_verified_log();
+
+-- One public-read policy for search, summaries, state, history and evidence.
+-- No scheduled job is needed at the exact 72-hour boundary.
+CREATE VIEW public_devices AS
+SELECT d.* FROM devices d
+WHERE d.visibility='public' OR NOT EXISTS (
+    SELECT 1 FROM device_ownerships o WHERE o.device_id=d.id AND o.ended_at IS NULL
+      AND COALESCE(o.last_verified_log_at,o.started_at) + interval '72 hours' > transaction_timestamp()
+);
 
 COMMIT;
