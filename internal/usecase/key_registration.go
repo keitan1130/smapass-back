@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,7 +32,7 @@ func (u *KeyRegistrationUsecase) EnrollmentChallenge(ctx context.Context, input 
 	if err != nil {
 		return nil, err
 	}
-	return u.challenges.Create(ctx, "enroll", []string{imei}, entity.Principal{})
+	return u.challenges.Create(ctx, "enroll", imei, entity.Principal{})
 }
 func (u *KeyRegistrationUsecase) RotationChallenge(ctx context.Context, p entity.Principal, input entity.RotationChallengeRequest) (*entity.KeyChallenge, error) {
 	if !validPrincipal(p) {
@@ -42,11 +41,11 @@ func (u *KeyRegistrationUsecase) RotationChallenge(ctx context.Context, p entity
 	if err := u.ready(); err != nil {
 		return nil, err
 	}
-	imeis, err := entity.NormalizeIMEIs(input.IMEIs)
+	imei, err := entity.NormalizeIMEI(input.IMEI)
 	if err != nil {
 		return nil, err
 	}
-	return u.challenges.Create(ctx, "rotate", imeis, p)
+	return u.challenges.Create(ctx, "rotate", imei, p)
 }
 
 func (u *KeyRegistrationUsecase) Verify(ctx context.Context, purpose string, p entity.Principal, input *entity.RegisterDevice) error {
@@ -64,13 +63,10 @@ func (u *KeyRegistrationUsecase) Verify(ctx context.Context, purpose string, p e
 	if err != nil {
 		return err
 	}
-	requested, err := entity.NormalizeIMEIs(input.IMEIs)
-	if err != nil {
-		return err
-	}
-	if !time.Now().Before(challenge.ExpiresAt) || purpose != challenge.Purpose || !slices.Equal(requested, challenge.IMEIs) {
+	if !time.Now().Before(challenge.ExpiresAt) || purpose != challenge.Purpose || input.IMEI != challenge.IMEI {
 		return entity.ErrChallengeInvalid
 	}
+
 	if purpose == "enroll" {
 		if challenge.ConsumedAt != nil || challenge.InstallationID != "" {
 			return entity.ErrChallengeInvalid

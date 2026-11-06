@@ -18,9 +18,9 @@ import (
 	"smapass-back/internal/usecase"
 )
 
-func input(t *testing.T, db *bun.DB, p entity.Principal, imeis ...string) entity.RegisterDevice {
+func input(t *testing.T, db *bun.DB, p entity.Principal, imei string) entity.RegisterDevice {
 	t.Helper()
-	return testutil.Rotation(t, db, p, imeis...)
+	return testutil.Rotation(t, db, p, imei)
 }
 
 func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool) error {
@@ -61,7 +61,7 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	ctx := context.Background()
 	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, old, a := credentials(t, db, "490154203237518")
-	request := input(t, db, a, "490154203237518", "356938035643809")
+	request := input(t, db, a, "490154203237518")
 	first, err := u.Register(ctx, a, request)
 	if err != nil {
 		t.Fatal(err)
@@ -73,41 +73,41 @@ func TestRegistrationLookupAndReclaim(t *testing.T) {
 	if err != nil || again.OwnershipID != first.OwnershipID || !again.RegisteredAt.Equal(first.RegisteredAt) {
 		t.Fatalf("idempotency failed: %v", err)
 	}
-	rotated, err := u.Register(ctx, a, input(t, db, a, request.IMEIs...))
+	rotated, err := u.Register(ctx, a, input(t, db, a, request.IMEI))
 	if err != nil || rotated.KeyID == first.KeyID || rotated.OwnershipID != first.OwnershipID {
 		t.Fatalf("key rotation: %v", err)
 	}
-	if _, err = u.Lookup(ctx, a, request.IMEIs[1]); err != nil {
+	if _, err = u.Lookup(ctx, a, request.IMEI); err != nil {
 		t.Fatal(err)
 	}
 	_, _, other := credentials(t, db, "000000000094821")
 	if _, err = u.Lookup(ctx, other, first.IMEI); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation lookup: %v", err)
 	}
-	if _, err = u.Register(ctx, other, input(t, db, other, first.IMEI)); !errors.Is(err, repository.ErrNotFound) {
+	if _, err = u.Challenge(ctx, other, entity.RotationChallengeRequest{IMEI: first.IMEI}); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation write: %v", err)
 	}
-	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1])); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("early reclaim: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '71 hours' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1])); !errors.Is(err, entity.ErrDeviceInUse) {
+	if _, err = auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEI)); !errors.Is(err, entity.ErrDeviceInUse) {
 		t.Fatalf("reclaimed before 72 hours: %v", err)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE device_ownerships SET started_at=clock_timestamp()-interval '3 days' WHERE id=?", first.OwnershipID); err != nil {
 		t.Fatal(err)
 	}
-	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEIs[1]))
+	next, err := auth.Enroll(ctx, testutil.Enrollment(t, db, request.IMEI))
 	if err != nil || next.IMEI != first.IMEI {
-		t.Fatalf("alias reclaim: %v", err)
+		t.Fatalf("reclaim: %v", err)
 	}
 	b, err := auth.Authenticate(ctx, next.AccessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := u.Register(ctx, b, input(t, db, b, request.IMEIs[1]))
+	claimed, err := u.Register(ctx, b, input(t, db, b, request.IMEI))
 	if err != nil || claimed.OwnershipID == first.OwnershipID {
 		t.Fatalf("key after reclaim: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	ctx := context.Background()
 	u := usecase.NewDeviceUsecase(NewRepository(db), testutil.Registration(t, db))
 	auth, old, a := credentials(t, db, "490154203237518")
-	first, err := u.Register(ctx, a, input(t, db, a, a.IMEI, "356938035643809"))
+	first, err := u.Register(ctx, a, input(t, db, a, a.IMEI))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestManualRevocationReleasesDeviceAndPreservesEvidence(t *testing.T) {
 	if err = u.Revoke(ctx, other, a.IMEI); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("other installation revoked: %v", err)
 	}
-	if err = u.Revoke(ctx, a, "356938035643809"); err != nil {
+	if err = u.Revoke(ctx, a, a.IMEI); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = auth.Authenticate(ctx, old.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {

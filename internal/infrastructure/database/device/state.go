@@ -12,7 +12,7 @@ import (
 	"smapass-back/internal/infrastructure/database/dto"
 )
 
-func primaryIMEIByID(ctx context.Context, db bun.IDB, id string) (string, error) {
+func imeiByID(ctx context.Context, db bun.IDB, id string) (string, error) {
 	var primary string
 	err := db.NewRaw("SELECT imei FROM devices WHERE public_id=?", id).Scan(ctx, &primary)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -35,7 +35,7 @@ func (r *Repository) FindState(ctx context.Context, id string, limit, offset int
 
 func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, includeHistory bool) (*entity.DeviceState, error) {
 	var state entity.DeviceState
-	primary, err := primaryIMEIByID(ctx, tx, id)
+	primary, err := imeiByID(ctx, tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,6 @@ func (r *Repository) ListStates(ctx context.Context, ids []string) ([]entity.Dev
 
 func (r *Repository) Search(ctx context.Context, imeis []string) ([]entity.DeviceReference, error) {
 	items := make([]entity.DeviceReference, 0)
-	err := r.db.NewRaw(`SELECT a.imei,d.public_id AS id FROM device_imei_aliases a
- JOIN devices d ON d.imei=a.primary_imei WHERE a.imei IN (?) ORDER BY a.imei`, bun.In(imeis)).Scan(ctx, &items)
+	err := r.db.NewRaw(`SELECT imei,public_id AS id FROM devices WHERE imei IN (?) ORDER BY imei`, bun.In(imeis)).Scan(ctx, &items)
 	return items, err
 }

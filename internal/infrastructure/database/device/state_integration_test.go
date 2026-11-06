@@ -20,31 +20,30 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	r := NewRepository(db)
 	u := usecase.NewDeviceUsecase(r, testutil.Registration(t, db))
 	const imei = "000000000094821"
-	const alias = "356938035643809"
 	initial, err := r.FindState(ctx, publicID(t, db, imei), 100, 0)
 	if err != nil || initial.RecordCount != 28 || initial.Status.Sequence != 28 {
 		t.Fatalf("initial lifetime state: %+v %v", initial, err)
 	}
 	_, oldTokens, old := credentials(t, db, imei)
-	first, err := u.Register(ctx, old, input(t, db, old, imei, alias))
+	first, err := u.Register(ctx, old, input(t, db, old, imei))
 	if err != nil || first.NextSequence != 29 || first.PreviousHash == nil {
 		t.Fatalf("first continuation: %+v %v", first, err)
 	}
-	if err := u.Revoke(ctx, old, alias); err != nil {
+	if err := u.Revoke(ctx, old, imei); err != nil {
 		t.Fatal(err)
 	}
-	released, err := r.FindState(ctx, publicID(t, db, alias), 100, 0)
+	released, err := r.FindState(ctx, publicID(t, db, imei), 100, 0)
 	if err != nil || released.RegistrationStatus != "released" || released.RecordCount != 28 || released.History.Total != 28 || released.ID != initial.ID {
 		t.Fatalf("sale hid lifetime history: %+v %v", released, err)
 	}
-	if items, total, err := historyPage(t, ctx, r, publicID(t, db, alias), 2, 27); err != nil || total != 28 || len(items) != 1 || items[0].Sequence != 28 {
+	if items, total, err := historyPage(t, ctx, r, publicID(t, db, imei), 2, 27); err != nil || total != 28 || len(items) != 1 || items[0].Sequence != 28 {
 		t.Fatalf("released history: %+v %d %v", items, total, err)
 	}
-	auth, _, next := credentials(t, db, alias)
+	auth, _, next := credentials(t, db, imei)
 	if _, err := auth.Authenticate(ctx, oldTokens.AccessToken); !errors.Is(err, entity.ErrUnauthenticated) {
 		t.Fatalf("previous holder retained authority: %v", err)
 	}
-	second, err := u.Register(ctx, next, input(t, db, next, alias))
+	second, err := u.Register(ctx, next, input(t, db, next, imei))
 	if err != nil || second.IMEI != imei || second.OwnershipID == first.OwnershipID || second.NextSequence != 29 || second.PreviousHash == nil || *second.PreviousHash != *first.PreviousHash {
 		t.Fatalf("next holder did not inherit chain position: %+v %v", second, err)
 	}
@@ -71,7 +70,7 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	if err := insertLog(ctx, db, first, 30, true); err == nil {
 		t.Fatal("previous holder's key appended after transfer")
 	}
-	items, total, err := r.Records(ctx, publicID(t, db, alias), 500, 0)
+	items, total, err := r.Records(ctx, publicID(t, db, imei), 500, 0)
 	if err != nil || total != 29 || len(items) != 29 || items[28].PreviousHash == nil || *items[28].PreviousHash != items[27].PayloadHash {
 		t.Fatalf("lifetime evidence lost, duplicated or disconnected: %d %d %v", len(items), total, err)
 	}

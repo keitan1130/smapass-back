@@ -5,5 +5,5 @@ DROP FUNCTION reject_evidence_change(), guard_owned_log(), touch_verified_log();
 DROP TABLE anchors, device_keys;
 DROP FUNCTION protect_device_key_history();
 DROP TABLE key_registration_challenges, app_tokens, app_installations;
-DROP TABLE device_ownerships, device_imei_aliases, devices;
+DROP TABLE device_ownerships, devices;
 COMMIT;

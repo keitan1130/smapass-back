@@ -158,11 +158,7 @@ func (v *Verifier) Verify(ctx context.Context, publicPEM string, proof entity.Ke
 	if err != nil {
 		return nil, entity.ErrAttestationRejected
 	}
-	required := slices.Clone(challenge.IMEIs)
-	if !slices.Contains(required, challenge.IMEI) {
-		required = append(required, challenge.IMEI)
-	}
-	result, err := v.authorizations(sw, hw, required)
+	result, err := v.authorizations(sw, hw, challenge.IMEI)
 	if err != nil {
 		return nil, entity.ErrAttestationRejected
 	}
@@ -198,7 +194,7 @@ func (v *Verifier) Verify(ctx context.Context, publicPEM string, proof entity.Ke
 
 func hardwareLevel(value int) bool { return value == 1 || value == 2 }
 
-func (v *Verifier) authorizations(sw, hw authorizationList, imeis []string) (*entity.VerifiedKey, error) {
+func (v *Verifier) authorizations(sw, hw authorizationList, registeredIMEI string) (*entity.VerifiedKey, error) {
 	for _, tag := range []int{1, 2, 3, 5, 10, 702, 704, 705, 706} {
 		if _, shadow := sw[tag]; shadow {
 			return nil, entity.ErrAttestationRejected
@@ -278,10 +274,8 @@ func (v *Verifier) authorizations(sw, hw authorizationList, imeis []string) (*en
 		}
 	}
 	if len(attested) > 0 {
-		for _, imei := range imeis {
-			if !slices.Contains(attested, imei) {
-				return nil, entity.ErrAttestationRejected
-			}
+		if !slices.Contains(attested, registeredIMEI) {
+			return nil, entity.ErrAttestationRejected
 		}
 		result.IMEIAttested = true
 	}

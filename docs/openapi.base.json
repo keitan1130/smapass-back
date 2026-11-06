@@ -1157,7 +1157,7 @@
             "name": "imeis",
             "in": "query",
             "required": true,
-            "description": "Comma-separated IMEIs (1 to 50). Each known IMEI resolves to a stable device UUID. Primary and secondary IMEIs of one device return the same UUID.",
+            "description": "Comma-separated IMEIs of 1 to 50 devices. Each registered IMEI maps to exactly one device UUID.",
             "schema": {
               "type": "string"
             },
@@ -1236,7 +1236,7 @@
             }
           }
         },
-        "description": "IMEI search only. Returns IMEI/UUID mappings for known primary and secondary IMEIs. Deduplicates identical inputs, omits unknown IMEIs, no history or state. Aliases of one device share the same UUID. Invalid/empty IMEIs and more than 50 inputs return 400."
+        "description": "IMEI search only. Returns one stable device UUID per known IMEI. Deduplicates identical inputs, omits unknown IMEIs, no history or state. Invalid/empty IMEIs and more than 50 inputs return 400."
       }
     }
   },
@@ -1286,16 +1286,11 @@
       }
     },
     "RegisterDevice": {
-      "imeis": {
-        "minItems": 1,
-        "maxItems": 4,
-        "items": {
-          "type": "string",
-          "pattern": "^[0-9]{15}$"
-        }
-      },
       "public_key": {
         "minLength": 1
+      },
+      "imei": {
+        "pattern": "^[0-9]{15}$"
       }
     },
     "TokenPair": {
@@ -1349,13 +1344,8 @@
       }
     },
     "RotationChallengeRequest": {
-      "imeis": {
-        "minItems": 1,
-        "maxItems": 4,
-        "items": {
-          "type": "string",
-          "pattern": "^[0-9]{15}$"
-        }
+      "imei": {
+        "pattern": "^[0-9]{15}$"
       }
     },
     "DeviceState": {
@@ -1388,7 +1378,7 @@
       },
       "imei": {
         "pattern": "^[0-9]{15}$",
-        "description": "Primary IMEI; not an alias."
+        "description": "The single IMEI registered for this device."
       },
       "key_id": {
         "format": "uuid"

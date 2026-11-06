@@ -72,19 +72,19 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 		public, proof := testutil.Proof(t, &challenge)
 		return entity.EnrollDevice{IMEI: imei, PublicKey: public, Proof: proof}
 	}
-	rotation := func(token string, imeis ...string) entity.RegisterDevice {
+	rotation := func(token string, imei string) entity.RegisterDevice {
 		t.Helper()
 		var challenge entity.KeyChallenge
-		body := request(http.MethodPost, "/api/devices/key-challenges", token, entity.RotationChallengeRequest{IMEIs: imeis}, 201)
+		body := request(http.MethodPost, "/api/devices/key-challenges", token, entity.RotationChallengeRequest{IMEI: imei}, 201)
 		if err := json.Unmarshal(body, &challenge); err != nil {
 			t.Fatal(err)
 		}
 		public, proof := testutil.Proof(t, &challenge)
-		return entity.RegisterDevice{IMEIs: imeis, PublicKey: public, Proof: proof}
+		return entity.RegisterDevice{IMEI: imei, PublicKey: public, Proof: proof}
 	}
 	request(http.MethodGet, "/api/devices/"+publicID(t, db, "000000000094821"), "", nil, 200)
 	request(http.MethodPost, "/api/devices/lookup", "", map[string]string{"imei": "490154203237518"}, 401)
-	request(http.MethodPost, "/api/devices/key-challenges", "", entity.RotationChallengeRequest{IMEIs: []string{"490154203237518"}}, 401)
+	request(http.MethodPost, "/api/devices/key-challenges", "", entity.RotationChallengeRequest{IMEI: "490154203237518"}, 401)
 	request(http.MethodPost, "/api/auth/devices", "", entity.EnrollDevice{IMEI: "490154203237518"}, 400)
 	request(http.MethodPost, "/api/auth/devices", "", map[string]string{"imei": "bad"}, 400)
 	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("490154203237518"), 201))
@@ -92,7 +92,10 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, map[string]string{"imei": "490154203237518"}, 200)
 	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI), "", nil, 200)
 	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI)+"?limit=2", "", nil, 200)
-	req := rotation(a.AccessToken, a.IMEI, "356938035643809")
+	request(http.MethodPost, "/api/devices/key-challenges", a.AccessToken, map[string]any{"imeis": []string{a.IMEI, "356938035643809"}}, 400)
+	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imeis": []string{a.IMEI, "356938035643809"}}, 400)
+	request(http.MethodPost, "/api/devices/key-challenges", a.AccessToken, map[string]any{"imei": []string{a.IMEI, "356938035643809"}}, 400)
+	req := rotation(a.AccessToken, a.IMEI)
 	request(http.MethodPost, "/api/devices", "", req, 401)
 	request(http.MethodPost, "/api/devices", a.IMEI, req, 401)
 	var device entity.Device
@@ -101,8 +104,8 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	}
 	lookup := map[string]string{"imei": a.IMEI}
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, lookup, 200)
-	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imeis": req.IMEIs, "public_key": req.PublicKey, "owner_subject": "forged"}, 400)
-	body := request(http.MethodGet, "/api/devices/"+publicID(t, db, "356938035643809"), "", nil, 200)
+	request(http.MethodPost, "/api/devices", a.AccessToken, map[string]any{"imei": req.IMEI, "public_key": req.PublicKey, "owner_subject": "forged"}, 400)
+	body := request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI), "", nil, 200)
 	var public map[string]any
 	if err := json.Unmarshal(body, &public); err != nil {
 		t.Fatal(err)
@@ -128,10 +131,10 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 		t.Fatalf("transaction accepted stale session: %v", err)
 	}
 	request(http.MethodPost, "/api/devices/lookup", next.AccessToken, map[string]string{"imei": "490154203237518"}, 200)
-	request(http.MethodPost, "/api/devices/356938035643809/revoke", next.AccessToken, nil, 204)
+	request(http.MethodPost, "/api/devices/"+a.IMEI+"/revoke", next.AccessToken, nil, 204)
 	request(http.MethodPost, "/api/devices/lookup", next.AccessToken, map[string]string{"imei": "490154203237518"}, 401)
 	var released entity.DeviceState
-	if err := json.Unmarshal(request(http.MethodGet, "/api/devices/"+publicID(t, db, "356938035643809"), "", nil, 200), &released); err != nil || released.RegistrationStatus != "released" {
+	if err := json.Unmarshal(request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI), "", nil, 200), &released); err != nil || released.RegistrationStatus != "released" {
 		t.Fatalf("sale interrupted public state: %v", err)
 	}
 	request(http.MethodGet, "/api/devices/"+publicID(t, db, a.IMEI)+"?limit=2", "", nil, 200)

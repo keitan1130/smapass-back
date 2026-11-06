@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"slices"
 	"strings"
 	"time"
 )
@@ -30,7 +29,7 @@ var (
 type Principal struct{ Issuer, Subject, SessionID, IMEI string }
 
 type RegisterDevice struct {
-	IMEIs     []string     `json:"imeis"`
+	IMEI      string       `json:"imei"`
 	PublicKey string       `json:"public_key"`
 	Proof     KeyProof     `json:"proof"`
 	Verified  *VerifiedKey `json:"-"`
@@ -38,7 +37,6 @@ type RegisterDevice struct {
 
 type Device struct {
 	IMEI              string     `json:"imei"`
-	IMEIs             []string   `json:"imeis"`
 	OwnershipID       int64      `json:"ownership_id"`
 	RegisteredAt      time.Time  `json:"registered_at"`
 	LastVerifiedLogAt *time.Time `json:"last_verified_log_at"`
@@ -74,20 +72,11 @@ func NormalizeIMEI(input string) (string, error) {
 }
 
 func (r *RegisterDevice) Normalize() error {
-	if len(r.IMEIs) < 1 || len(r.IMEIs) > 4 {
-		return ErrInvalidDevice
+	imei, err := NormalizeIMEI(r.IMEI)
+	if err != nil {
+		return err
 	}
-	unique := make([]string, 0, len(r.IMEIs))
-	for _, input := range r.IMEIs {
-		imei, err := NormalizeIMEI(input)
-		if err != nil {
-			return err
-		}
-		if !slices.Contains(unique, imei) {
-			unique = append(unique, imei)
-		}
-	}
-	r.IMEIs = unique
+	r.IMEI = imei
 	block, rest := pem.Decode([]byte(r.PublicKey))
 	if block == nil || block.Type != "PUBLIC KEY" || len(strings.TrimSpace(string(rest))) != 0 {
 		return ErrInvalidDevice

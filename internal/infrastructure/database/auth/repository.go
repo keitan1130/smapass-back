@@ -31,23 +31,13 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", imei); err != nil {
 			return err
 		}
-		primary := imei
-		err := tx.NewRaw("SELECT primary_imei FROM device_imei_aliases WHERE imei=?", imei).Scan(ctx, &primary)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO devices (imei) VALUES (?) ON CONFLICT (imei) DO NOTHING", imei); err != nil {
 			return err
 		}
-		if errors.Is(err, sql.ErrNoRows) {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO devices (imei) VALUES (?)", imei); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, "INSERT INTO device_imei_aliases (imei,primary_imei) VALUES (?,?)", imei, imei); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", primary); err != nil {
+		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei); err != nil {
 			return err
 		}
-		if _, err := keychallenge.Consume(ctx, tx, "enroll", primary, entity.Principal{}, []string{imei}, input.Verified); err != nil {
+		if _, err := keychallenge.Consume(ctx, tx, "enroll", imei, entity.Principal{}, input.Verified); err != nil {
 			return err
 		}
 		var now time.Time
@@ -59,7 +49,7 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 			StartedAt         time.Time
 			LastVerifiedLogAt *time.Time
 		}
-		err = tx.NewRaw("SELECT id,started_at,last_verified_log_at FROM device_ownerships WHERE imei=? AND ended_at IS NULL", primary).Scan(ctx, &old)
+		err := tx.NewRaw("SELECT id,started_at,last_verified_log_at FROM device_ownerships WHERE imei=? AND ended_at IS NULL", imei).Scan(ctx, &old)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -79,10 +69,10 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 		}
 		installation := uuid.NewString()
 		var ownership int64
-		if err := tx.NewRaw("INSERT INTO device_ownerships (imei,owner_issuer,owner_subject,started_at) VALUES (?,?,?,?) RETURNING id", primary, entity.DeviceIssuer, installation, now).Scan(ctx, &ownership); err != nil {
+		if err := tx.NewRaw("INSERT INTO device_ownerships (imei,owner_issuer,owner_subject,started_at) VALUES (?,?,?,?) RETURNING id", imei, entity.DeviceIssuer, installation, now).Scan(ctx, &ownership); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO app_installations (id,imei,ownership_id,created_at) VALUES (?,?,?,?)", installation, primary, ownership, now); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO app_installations (id,imei,ownership_id,created_at) VALUES (?,?,?,?)", installation, imei, ownership, now); err != nil {
 			return err
 		}
 		evidence, err := json.Marshal(input.Verified)
@@ -90,10 +80,10 @@ func (r *Repository) Enroll(ctx context.Context, input entity.EnrollDevice, mate
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO device_keys (imei,ownership_id,public_key,signature_algorithm,attestation,registration_challenge_id,attestation_verified_at,imei_attested)
-			VALUES (?,?,?,'ES256',?::jsonb,?,?,?)`, primary, ownership, input.PublicKey, string(evidence), input.Verified.ChallengeID, now, input.Verified.IMEIAttested); err != nil {
+			VALUES (?,?,?,'ES256',?::jsonb,?,?,?)`, imei, ownership, input.PublicKey, string(evidence), input.Verified.ChallengeID, now, input.Verified.IMEIAttested); err != nil {
 			return err
 		}
-		pair, err = issue(ctx, tx, installation, primary, material, now)
+		pair, err = issue(ctx, tx, installation, imei, material, now)
 		return err
 	})
 	var pgErr pgdriver.Error

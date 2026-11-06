@@ -9,13 +9,6 @@ CREATE TABLE devices (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE device_imei_aliases (
-    imei TEXT PRIMARY KEY CHECK (imei ~ '^[0-9]{15}$'),
-    primary_imei TEXT NOT NULL REFERENCES devices(imei)
-);
-
-CREATE INDEX idx_imei_aliases_device ON device_imei_aliases(primary_imei);
-
 CREATE TABLE device_ownerships (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     imei TEXT NOT NULL REFERENCES devices(imei),
@@ -61,7 +54,6 @@ COMMENT ON TABLE app_tokens IS 'SHA-256 digests only; rotated refresh tokens ret
 CREATE TABLE key_registration_challenges (
     id UUID PRIMARY KEY,
     imei TEXT NOT NULL CHECK (imei ~ '^[0-9]{15}$'),
-    imeis JSONB NOT NULL CHECK (jsonb_typeof(imeis) = 'array'),
     purpose TEXT NOT NULL CHECK (purpose IN ('enroll','rotate')),
     installation_id UUID REFERENCES app_installations(id),
     nonce BYTEA NOT NULL UNIQUE CHECK (octet_length(nonce)=32),

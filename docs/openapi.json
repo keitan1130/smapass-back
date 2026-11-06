@@ -10,12 +10,6 @@
           "imei_attested": {
             "type": "boolean"
           },
-          "imeis": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "key_attested": {
             "type": "boolean"
           },
@@ -63,7 +57,6 @@
         },
         "required": [
           "imei",
-          "imeis",
           "ownership_id",
           "registered_at",
           "last_verified_log_at",
@@ -563,7 +556,7 @@
             "type": "string"
           },
           "imei": {
-            "description": "Primary IMEI; not an alias.",
+            "description": "The single IMEI registered for this device.",
             "pattern": "^[0-9]{15}$",
             "type": "string"
           },
@@ -741,14 +734,9 @@
       },
       "RegisterDevice": {
         "properties": {
-          "imeis": {
-            "items": {
-              "pattern": "^[0-9]{15}$",
-              "type": "string"
-            },
-            "maxItems": 4,
-            "minItems": 1,
-            "type": "array"
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
           },
           "proof": {
             "$ref": "#/components/schemas/KeyProof"
@@ -759,7 +747,7 @@
           }
         },
         "required": [
-          "imeis",
+          "imei",
           "public_key",
           "proof"
         ],
@@ -767,18 +755,13 @@
       },
       "RotationChallengeRequest": {
         "properties": {
-          "imeis": {
-            "items": {
-              "pattern": "^[0-9]{15}$",
-              "type": "string"
-            },
-            "maxItems": 4,
-            "minItems": 1,
-            "type": "array"
+          "imei": {
+            "pattern": "^[0-9]{15}$",
+            "type": "string"
           }
         },
         "required": [
-          "imeis"
+          "imei"
         ],
         "type": "object"
       },
@@ -1957,11 +1940,11 @@
     },
     "/api/devices/search": {
       "get": {
-        "description": "IMEI search only. Returns IMEI/UUID mappings for known primary and secondary IMEIs. Deduplicates identical inputs, omits unknown IMEIs, no history or state. Aliases of one device share the same UUID. Invalid/empty IMEIs and more than 50 inputs return 400.",
+        "description": "IMEI search only. Returns one stable device UUID per known IMEI. Deduplicates identical inputs, omits unknown IMEIs, no history or state. Invalid/empty IMEIs and more than 50 inputs return 400.",
         "operationId": "searchDevicesByIMEI",
         "parameters": [
           {
-            "description": "Comma-separated IMEIs (1 to 50). Each known IMEI resolves to a stable device UUID. Primary and secondary IMEIs of one device return the same UUID.",
+            "description": "Comma-separated IMEIs of 1 to 50 devices. Each registered IMEI maps to exactly one device UUID.",
             "example": "000000000094821,490154203237518",
             "in": "query",
             "name": "imeis",
