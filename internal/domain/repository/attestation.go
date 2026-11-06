@@ -6,7 +6,7 @@ import (
 )
 
 type KeyChallengeRepository interface {
-	Create(context.Context, string, []string, entity.Principal) (*entity.KeyChallenge, error)
+	Create(context.Context, string, string, entity.Principal) (*entity.KeyChallenge, error)
 	Find(context.Context, string) (*entity.ChallengeContext, error)
 }
 

@@ -19,7 +19,7 @@ func (r *Repository) Records(ctx context.Context, id string, limit, offset int) 
 	return items, total, err
 }
 func readRecords(ctx context.Context, tx bun.IDB, id string, limit, offset int) ([]entity.VerificationRecord, int, error) {
-	primary, err := primaryIMEIByID(ctx, tx, id)
+	primary, err := imeiByID(ctx, tx, id)
 	if err != nil {
 		return nil, 0, err
 	}

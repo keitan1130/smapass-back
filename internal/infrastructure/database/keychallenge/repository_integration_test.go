@@ -78,7 +78,7 @@ func TestChallengeReplayExpiryAndAtomicRollback(t *testing.T) {
 	}
 	// A valid enroll proof cannot be used for a different purpose or IMEI.
 	swapped := testutil.Enrollment(t, db, p.IMEI)
-	if _, err = devices.Register(ctx, p, entity.RegisterDevice{IMEIs: []string{p.IMEI}, PublicKey: swapped.PublicKey, Proof: swapped.Proof}); !errors.Is(err, entity.ErrChallengeInvalid) {
+	if _, err = devices.Register(ctx, p, entity.RegisterDevice{IMEI: p.IMEI, PublicKey: swapped.PublicKey, Proof: swapped.Proof}); !errors.Is(err, entity.ErrChallengeInvalid) {
 		t.Fatalf("purpose substitution accepted: %v", err)
 	}
 	swapped.IMEI = "356938035643809"

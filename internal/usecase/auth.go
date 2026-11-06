@@ -21,7 +21,7 @@ func (u *AuthUsecase) Enroll(ctx context.Context, input entity.EnrollDevice) (*e
 	if err != nil {
 		return nil, err
 	}
-	registration := entity.RegisterDevice{IMEIs: []string{imei}, PublicKey: input.PublicKey, Proof: input.Proof}
+	registration := entity.RegisterDevice{IMEI: imei, PublicKey: input.PublicKey, Proof: input.Proof}
 	if err := u.keys.Verify(ctx, "enroll", entity.Principal{}, &registration); err != nil {
 		return nil, err
 	}

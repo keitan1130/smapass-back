@@ -9,12 +9,12 @@ import (
 	"smapass-back/internal/domain/repository"
 )
 
-// Writes resolve primary and secondary IMEIs; public reads use the device UUID.
-func primaryIMEIByAlias(ctx context.Context, db bun.IDB, imei string) (string, error) {
-	var primary string
-	err := db.NewRaw("SELECT primary_imei FROM device_imei_aliases WHERE imei=?", imei).Scan(ctx, &primary)
+// lockDevice serializes registration changes and log writes for one IMEI.
+func lockDevice(ctx context.Context, db bun.IDB, imei string) error {
+	var stored string
+	err := db.NewRaw("SELECT imei FROM devices WHERE imei=? FOR UPDATE", imei).Scan(ctx, &stored)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", repository.ErrNotFound
+		return repository.ErrNotFound
 	}
-	return primary, err
+	return err
 }

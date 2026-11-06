@@ -27,9 +27,9 @@ Content-Type: application/json
 {"imei":"490154203237518","public_key":"<P-256 公開鍵 PEM>","proof":{"challenge_id":"<チャレンジID>","certificate_chain":["<DERをBase64>","<中間証明書・ルート>"],"signature_der":"<署名DERをBase64>"}}
 ```
 
-成功は201。`imei`（主 IMEI）、`access_token`、`refresh_token`、`token_type: "Bearer"`、`expires_in: 900`、`refresh_expires_at` を返す。この時点で公開鍵も保存済みで、`POST /api/devices/lookup` で確認できる。検証方法は [鍵登録の接続手順](android-key-registration.md#初回登録初期化後の再登録) を参照。
+成功は201。`imei`（登録IMEI）、`access_token`、`refresh_token`、`token_type: "Bearer"`、`expires_in: 900`、`refresh_expires_at` を返す。この時点で公開鍵も保存済みで、`POST /api/devices/lookup` で確認できる。検証方法は [鍵登録の接続手順](android-key-registration.md#初回登録初期化後の再登録) を参照。
 
-使用中の端末へ別の認証情報を発行する操作は409。認証情報を取得する目的でこの API を毎回呼ばない。同じ IMEI や副 IMEI を再送しても、既存の認証情報を返したり、その登録者に成り代わったりはできない。
+使用中の端末へ別の認証情報を発行する操作は409。認証情報を取得する目的でこの API を毎回呼ばない。同じIMEIを再送しても、既存の認証情報を返したり、その登録者に成り代わったりはできない。
 
 新しい登録を許可する条件は、現在の登録がない場合、現在の登録者が手動で登録を終了した場合、または最終検証済みログのサーバー受信から3日経過した場合。ログ未受信なら登録開始時刻を使う。切り替え時は旧認証情報・鍵を失効する。IMEI単位の過去の計測履歴と最新状態の公開参照は継続する。同時に申請されても1件だけ成功する。
 

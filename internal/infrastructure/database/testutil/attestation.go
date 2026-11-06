@@ -42,12 +42,12 @@ func Enrollment(t testing.TB, db *bun.DB, imei string) entity.EnrollDevice {
 	public, proof := Proof(t, c)
 	return entity.EnrollDevice{IMEI: imei, PublicKey: public, Proof: proof}
 }
-func Rotation(t testing.TB, db *bun.DB, p entity.Principal, imeis ...string) entity.RegisterDevice {
+func Rotation(t testing.TB, db *bun.DB, p entity.Principal, imei string) entity.RegisterDevice {
 	t.Helper()
-	c, err := Registration(t, db).RotationChallenge(context.Background(), p, entity.RotationChallengeRequest{IMEIs: imeis})
+	c, err := Registration(t, db).RotationChallenge(context.Background(), p, entity.RotationChallengeRequest{IMEI: imei})
 	if err != nil {
 		t.Fatal(err)
 	}
 	public, proof := Proof(t, c)
-	return entity.RegisterDevice{IMEIs: imeis, PublicKey: public, Proof: proof}
+	return entity.RegisterDevice{IMEI: imei, PublicKey: public, Proof: proof}
 }

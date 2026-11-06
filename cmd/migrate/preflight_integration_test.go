@@ -74,6 +74,15 @@ func TestPreflightAllowsLaterMigrationsAndRejectsIncompatibleSchema(t *testing.T
 	if err = db.NewRaw("SELECT public_id FROM devices WHERE imei='490154203237518'").Scan(ctx, &retained); err != nil || retained != id {
 		t.Fatalf("migration changed device: %v", err)
 	}
+	if _, err = db.ExecContext(ctx, "ALTER TABLE key_registration_challenges ADD COLUMN imeis jsonb"); err != nil {
+		t.Fatal(err)
+	}
+	if err = preflightBaselineDB(ctx, db.DB); err == nil {
+		t.Fatal("multi-IMEI challenge schema accepted")
+	}
+	if _, err = db.ExecContext(ctx, "ALTER TABLE key_registration_challenges DROP COLUMN imeis"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.ExecContext(ctx, "ALTER TABLE devices DROP COLUMN public_id"); err != nil {
 		t.Fatal(err)
 	}

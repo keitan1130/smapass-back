@@ -27,7 +27,7 @@ func fixtureVerifier(t *testing.T) (*Verifier, *attestationfixture.Authority, *e
 	nonce := []byte("0123456789abcdef0123456789abcdef")
 	payload := []byte(`{"protocol":"test-only signing payload","imei":"490154203237518"}`)
 	c := &entity.KeyChallenge{ID: "11111111-1111-4111-8111-111111111111", AttestationChallenge: base64.StdEncoding.EncodeToString(nonce), SigningPayload: base64.StdEncoding.EncodeToString(payload), ExpiresAt: time.Now().Add(time.Minute)}
-	ctx := &entity.ChallengeContext{ID: c.ID, IMEI: "490154203237518", IMEIs: []string{"490154203237518"}, Nonce: nonce, Payload: payload, ExpiresAt: c.ExpiresAt}
+	ctx := &entity.ChallengeContext{ID: c.ID, IMEI: "490154203237518", Nonce: nonce, Payload: payload, ExpiresAt: c.ExpiresAt}
 	return v, a, c, ctx
 }
 
@@ -138,9 +138,8 @@ func TestUnconfiguredVerifierAndPolicy(t *testing.T) {
 	}
 }
 
-func TestHardwareIMEIAttestationIncludesCanonicalIMEI(t *testing.T) {
+func TestHardwareIMEIAttestationIncludesRegisteredIMEI(t *testing.T) {
 	v, a, c, challenge := fixtureVerifier(t)
-	challenge.IMEIs = []string{"356938035643809"}
 	options := attestationfixture.DefaultOptions()
 	options.AttestedIMEIs = []string{"356938035643809"}
 	public, proof, err := a.Proof(c, options)
@@ -148,7 +147,7 @@ func TestHardwareIMEIAttestationIncludesCanonicalIMEI(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = v.Verify(context.Background(), public, proof, challenge); !errors.Is(err, entity.ErrAttestationRejected) {
-		t.Fatalf("unattested canonical IMEI accepted: %v", err)
+		t.Fatalf("unattested registered IMEI accepted: %v", err)
 	}
 	options.AttestedIMEIs = append(options.AttestedIMEIs, challenge.IMEI)
 	public, proof, err = a.Proof(c, options)
@@ -157,7 +156,7 @@ func TestHardwareIMEIAttestationIncludesCanonicalIMEI(t *testing.T) {
 	}
 	result, err := v.Verify(context.Background(), public, proof, challenge)
 	if err != nil || !result.IMEIAttested {
-		t.Fatalf("matching dual IMEIs rejected: %v", err)
+		t.Fatalf("registered IMEI in hardware attestation rejected: %v", err)
 	}
 }
 

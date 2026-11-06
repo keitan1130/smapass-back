@@ -41,7 +41,7 @@ ATTESTATION_REQUIRE_IMEI=false
 
 通常の key attestation は「許可アプリが作ったハードウェア鍵」を確認するもので、申告された IMEI がその実機の識別子かまで必ず証明するものではない。`key_attested` と `imei_attested` を分けて返し、IMEI 自体の attestation がない場合は `imei_attested: false` にする。
 
-証明書に IMEI のハードウェア attestation がある場合は、主 IMEI と登録対象のすべての IMEI に一致することも確認する。不一致は設定にかかわらず拒否する。
+証明書にIMEIのハードウェアattestationがある場合は、登録する1個のIMEIが含まれることを確認する。不一致は設定にかかわらず拒否する。
 
 `ATTESTATION_REQUIRE_IMEI=true` にすると、IMEI 自体の attestation も必須になる。Android の ID attestation は対応端末と権限・管理条件が必要で、通常の一般アプリで利用できるとは限らない。この設定を有効にする場合は、対象端末とアプリの権限を先に確認する。`false` の場合も、IMEI の実機同一性まで確認済みとは表示しない。
 
@@ -74,9 +74,9 @@ Content-Type: application/json
 
 登録後は `POST /api/devices/lookup` で確認できる。Android アプリの実装・実機接続は別リポジトリの担当で、ここではバックエンドと接続仕様を実装している。
 
-## 鍵交換・副 IMEI の登録
+## 鍵交換
 
-アクセストークンを付け、`POST /api/devices/key-challenges` に `{"imeis":["490154203237518"]}` を送る。そのチャレンジで新しい鍵と証明書を生成し、`POST /api/devices` へ従来の `imeis` / `public_key` に上と同じ `proof` を加えて送る。副 IMEI を追加する場合は `imeis` に合わせて指定する。
+アクセストークンを付け、`POST /api/devices/key-challenges` に `{"imei":"490154203237518"}` を送る。そのチャレンジで新しい鍵と証明書を生成し、`POST /api/devices` へ単一の `imei` / `public_key` に上と同じ `proof` を加えて送る。登録したIMEIだけを指定する。
 
 チャレンジは現在のアプリ登録に結び付く。他アプリ登録のチャレンジや、初回登録のチャレンジで鍵交換はできない。保存直前にも同じトランザクション内でトークンと端末への権限を確認する。
 
@@ -109,3 +109,5 @@ Content-Type: application/json
 - [Google: 信頼ルートの公式配布](https://android.googleapis.com/attestation/root)
 - [Google: 証明書失効状態](https://android.googleapis.com/attestation/status)
 - [Android: applicationId の設定](https://developer.android.com/build/configure-app-module)
+
+登録・鍵交換は常にIMEI1個。鍵交換チャレンジの本文は `{"imei":"登録IMEI"}`、鍵交換本文は `imei`・`public_key`・`proof`。`imeis` 配列は受け付けない。署名対象は `smapass-key-registration-v2` のサーバー生成バイト列で、IMEIは単一の `imei` に格納する。Androidは返された `signing_payload` の復号バイト列をそのまま署名する。計測ログのJCS形式は変更しない。

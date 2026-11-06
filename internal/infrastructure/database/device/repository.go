@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -25,26 +24,8 @@ var _ repository.DeviceRepository = (*Repository)(nil)
 func (r *Repository) Register(ctx context.Context, principal entity.Principal, input entity.RegisterDevice) (*entity.Device, error) {
 	var result *entity.Device
 	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// Overlapping IMEI sets acquire locks in the same order, including first registration.
-		locks := slices.Clone(input.IMEIs)
-		slices.Sort(locks)
-		for _, imei := range locks {
-			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", imei); err != nil {
-				return err
-			}
-		}
-		var matches []string
-		if err := tx.NewRaw("SELECT DISTINCT primary_imei FROM device_imei_aliases WHERE imei IN (?)", bun.In(input.IMEIs)).Scan(ctx, &matches); err != nil {
-			return err
-		}
-		if len(matches) > 1 {
-			return entity.ErrDeviceConflict
-		}
-		if len(matches) == 0 {
-			return repository.ErrNotFound
-		}
-		primary := matches[0]
-		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei = ? FOR UPDATE", primary); err != nil {
+		primary := input.IMEI
+		if err := lockDevice(ctx, tx, primary); err != nil {
 			return err
 		}
 		if err := authorization.RequireDevice(ctx, tx, principal, primary); err != nil {
@@ -66,7 +47,7 @@ func (r *Repository) Register(ctx context.Context, principal entity.Principal, i
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		used, err := keychallenge.Consume(ctx, tx, "rotate", primary, principal, input.IMEIs, input.Verified)
+		used, err := keychallenge.Consume(ctx, tx, "rotate", primary, principal, input.Verified)
 		if err != nil {
 			return err
 		}
@@ -99,11 +80,6 @@ func (r *Repository) Register(ctx context.Context, principal entity.Principal, i
 				return err
 			}
 		}
-		for _, imei := range input.IMEIs {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO device_imei_aliases (imei, primary_imei) VALUES (?, ?) ON CONFLICT (imei) DO NOTHING", imei, primary); err != nil {
-				return err
-			}
-		}
 		var errResult error
 		result, errResult = findOwned(ctx, tx, principal, primary)
 		return errResult
@@ -122,23 +98,15 @@ func (r *Repository) FindOwned(ctx context.Context, principal entity.Principal, 
 // Revoke releases the current registration immediately, preserving historical evidence.
 func (r *Repository) Revoke(ctx context.Context, principal entity.Principal, imei string) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var primary string
-		err := tx.NewRaw("SELECT primary_imei FROM device_imei_aliases WHERE imei = ?", imei).Scan(ctx, &primary)
-		if errors.Is(err, sql.ErrNoRows) {
-			return repository.ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		// Log ingestion and registration take the same lock before checking ownership.
-		if _, err := tx.ExecContext(ctx, "SELECT imei FROM devices WHERE imei = ? FOR UPDATE", primary); err != nil {
+		primary := imei
+		if err := lockDevice(ctx, tx, primary); err != nil {
 			return err
 		}
 		if err := authorization.RequireDevice(ctx, tx, principal, primary); err != nil {
 			return err
 		}
 		var id int64
-		err = tx.NewRaw(`SELECT id FROM device_ownerships WHERE imei = ? AND ended_at IS NULL
+		err := tx.NewRaw(`SELECT id FROM device_ownerships WHERE imei = ? AND ended_at IS NULL
 			AND owner_issuer = ? AND owner_subject = ?`, primary, principal.Issuer, principal.Subject).Scan(ctx, &id)
 		if errors.Is(err, sql.ErrNoRows) {
 			return repository.ErrNotFound
@@ -168,19 +136,15 @@ func findOwned(ctx context.Context, db bun.IDB, principal entity.Principal, imei
 	err := db.NewRaw(`SELECT d.imei, o.id AS ownership_id, o.started_at AS registered_at,
 		o.last_verified_log_at,
 		COALESCE(last_log.seq,0)+1 AS next_sequence, encode(last_log.payload_hash,'hex') AS previous_hash,
-        k.id AS key_id,(k.attestation_verified_at IS NOT NULL) AS key_attested,k.imei_attested FROM device_imei_aliases a JOIN devices d ON d.imei = a.primary_imei
+        k.id AS key_id,(k.attestation_verified_at IS NOT NULL) AS key_attested,k.imei_attested FROM devices d
 		JOIN device_ownerships o ON o.imei = d.imei AND o.ended_at IS NULL
 		JOIN device_keys k ON k.ownership_id = o.id AND k.revoked_at IS NULL
 		LEFT JOIN LATERAL (SELECT seq,payload_hash FROM device_logs WHERE imei=d.imei ORDER BY seq DESC LIMIT 1) last_log ON true
-        WHERE a.imei = ? AND o.owner_issuer = ? AND o.owner_subject = ?`, imei, principal.Issuer, principal.Subject).Scan(ctx, &result)
+        WHERE d.imei = ? AND o.owner_issuer = ? AND o.owner_subject = ?`, imei, principal.Issuer, principal.Subject).Scan(ctx, &result)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	}
 	if err != nil {
-		return nil, err
-	}
-	result.IMEIs = []string{}
-	if err := db.NewRaw("SELECT imei FROM device_imei_aliases WHERE primary_imei = ? ORDER BY imei", result.IMEI).Scan(ctx, &result.IMEIs); err != nil {
 		return nil, err
 	}
 	result.ReclaimableAt = entity.DeviceReclaimableAt(result.RegisteredAt, result.LastVerifiedLogAt)

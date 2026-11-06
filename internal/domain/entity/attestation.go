@@ -2,7 +2,6 @@ package entity
 
 import (
 	"errors"
-	"slices"
 	"time"
 )
 
@@ -32,13 +31,12 @@ type EnrollmentChallengeRequest struct {
 	IMEI string `json:"imei"`
 }
 type RotationChallengeRequest struct {
-	IMEIs []string `json:"imeis"`
+	IMEI string `json:"imei"`
 }
 
 // ChallengeContext and VerifiedKey are internal; they must never be bound from JSON.
 type ChallengeContext struct {
 	ID, IMEI, Purpose, InstallationID string
-	IMEIs                             []string
 	Nonce, Payload                    []byte
 	ExpiresAt                         time.Time
 	ConsumedAt                        *time.Time
@@ -57,22 +55,4 @@ type VerifiedKey struct {
 	IMEIAttested     bool      `json:"imei_attested"`
 	CertificateChain []string  `json:"certificate_chain"`
 	SignatureDER     string    `json:"signature_der"`
-}
-
-func NormalizeIMEIs(values []string) ([]string, error) {
-	if len(values) < 1 || len(values) > 4 {
-		return nil, ErrInvalidDevice
-	}
-	unique := make([]string, 0, len(values))
-	for _, v := range values {
-		imei, err := NormalizeIMEI(v)
-		if err != nil {
-			return nil, err
-		}
-		if !slices.Contains(unique, imei) {
-			unique = append(unique, imei)
-		}
-	}
-	slices.Sort(unique)
-	return unique, nil
 }
