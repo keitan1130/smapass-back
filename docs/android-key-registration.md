@@ -111,3 +111,5 @@ Content-Type: application/json
 - [Android: applicationId の設定](https://developer.android.com/build/configure-app-module)
 
 登録はIMEI1個、鍵交換は端末UUID1個。鍵交換チャレンジの本文は `{"device_id":"登録UUID"}`、鍵交換本文は `device_id`・`public_key`・`proof`。IMEIや `imeis` 配列による鍵交換は受け付けない。署名対象は `smapass-key-registration-v3` のサーバー生成バイト列。初回登録用は `imei`、鍵交換用は `device_id` を含める。Androidは返された `signing_payload` の復号バイト列をそのまま署名する。
+
+初回登録・持ち主交代後の端末は非公開。公開URLを他の人に共有する場合は、先に `PATCH /api/devices/{id}/visibility` で `{"visibility":"public"}` を送る。lookup の `visibility` は実際の公開状態を返す。

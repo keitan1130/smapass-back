@@ -63,6 +63,7 @@ func AddDeviceRoutes(e *echo.Echo, devices *controller.DeviceController, authent
 	g.POST("/lookup", devices.Lookup, authenticate)
 	g.POST("/:id/revoke", devices.Revoke, authenticate)
 	g.POST("/:id/logs", devices.Ingest, authenticate)
+	g.PATCH("/:id/visibility", devices.SetVisibility, authenticate)
 }
 
 func AddAuthRoutes(e *echo.Echo, auth *controller.AuthController) {
@@ -95,6 +96,10 @@ func writeError(c *echo.Context, err error) {
 		status, code, message = 409, "invalid_challenge", "registration challenge invalid, expired or already used"
 	case errors.Is(err, entity.ErrUnauthenticated):
 		status, code, message = 401, "unauthorized", "valid device credentials required"
+	case errors.Is(err, entity.ErrInvalidVisibility):
+		status, code, message = 400, "invalid_visibility", "visibility must be public or private"
+	case errors.Is(err, entity.ErrVisibilityLocked):
+		status, code, message = 409, "visibility_locked", "a reclaimable device must remain public; submit a new verified log before making it private"
 	case errors.Is(err, entity.ErrInvalidDeviceID):
 		status, code, message = 400, "invalid_id", "valid device UUID required"
 	case errors.Is(err, entity.ErrInvalidDevice):

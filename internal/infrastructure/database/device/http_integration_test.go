@@ -90,6 +90,8 @@ func TestDeviceHTTPAuthenticationAndAuthorization(t *testing.T) {
 	a := decodePair(request(http.MethodPost, "/api/auth/devices", "", enrollment("490154203237518"), 201))
 	request(http.MethodPost, "/api/auth/devices", "", enrollment("490154203237518"), 409)
 	request(http.MethodPost, "/api/devices/lookup", a.AccessToken, map[string]string{"device_id": a.DeviceID}, 200)
+	request(http.MethodGet, "/api/devices/"+a.DeviceID, "", nil, 404)
+	request(http.MethodPatch, "/api/devices/"+a.DeviceID+"/visibility", a.AccessToken, entity.UpdateDeviceVisibility{Visibility: "public"}, 200)
 	request(http.MethodGet, "/api/devices/"+a.DeviceID, "", nil, 200)
 	request(http.MethodGet, "/api/devices/"+a.DeviceID+"?limit=2", "", nil, 200)
 	request(http.MethodPost, "/api/devices/key-challenges", a.AccessToken, map[string]any{"imeis": []string{a.DeviceID, "356938035643809"}}, 400)

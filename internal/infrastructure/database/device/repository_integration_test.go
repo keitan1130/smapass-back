@@ -53,6 +53,9 @@ func credentials(t *testing.T, db *bun.DB, imei string) (*usecase.AuthUsecase, *
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := NewRepository(db).SetVisibility(context.Background(), p, p.DeviceID, "public"); err != nil {
+		t.Fatal(err)
+	}
 	return u, pair, p
 }
 

@@ -160,3 +160,19 @@ func (c *DeviceController) Search(ctx *echo.Context) error {
 	}
 	return ctx.JSON(http.StatusOK, schema.DeviceReferences{Items: items})
 }
+
+func (c *DeviceController) SetVisibility(ctx *echo.Context) error {
+	principal, ok := auth.Principal(ctx.Request().Context())
+	if !ok {
+		return entity.ErrUnauthenticated
+	}
+	var input entity.UpdateDeviceVisibility
+	if err := decodeDevice(ctx, &input); err != nil {
+		return err
+	}
+	result, err := c.usecase.SetVisibility(ctx.Request().Context(), principal, ctx.Param("id"), input.Visibility)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, result)
+}

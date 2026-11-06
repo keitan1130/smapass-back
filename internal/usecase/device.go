@@ -123,3 +123,17 @@ func (u *DeviceUsecase) Search(ctx context.Context, inputs []string) ([]entity.D
 	}
 	return u.repo.Search(ctx, imeis)
 }
+
+func (u *DeviceUsecase) SetVisibility(ctx context.Context, principal entity.Principal, input string, visibility string) (*entity.DeviceVisibility, error) {
+	if !validPrincipal(principal) {
+		return nil, entity.ErrUnauthenticated
+	}
+	id, err := entity.NormalizeDeviceID(input)
+	if err != nil {
+		return nil, err
+	}
+	if visibility != "public" && visibility != "private" {
+		return nil, entity.ErrInvalidVisibility
+	}
+	return u.repo.SetVisibility(ctx, principal, id, visibility)
+}
