@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/uptrace/bun"
 	"smapass-back/internal/domain/entity"
@@ -53,7 +54,7 @@ func TestLifetimeStateAndChainSurviveSale(t *testing.T) {
 	if err := insertLog(ctx, db, second, 30, true); err == nil {
 		t.Fatal("skipped sequence accepted")
 	}
-	if err := insertLog(ctx, db, second, 29, true); err != nil {
+	if err := insertLogAt(ctx, db, second, 29, true, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO device_status (log_id,imei,os_version,sdk_int,collected_at)

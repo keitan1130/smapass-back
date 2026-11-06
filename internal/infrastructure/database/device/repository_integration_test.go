@@ -24,6 +24,10 @@ func input(t *testing.T, db *bun.DB, p entity.Principal, imeis ...string) entity
 }
 
 func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool) error {
+	return insertLogAt(ctx, db, device, seq, verified, time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+}
+
+func insertLogAt(ctx context.Context, db *bun.DB, device *entity.Device, seq int, verified bool, collectedAt time.Time) error {
 	var marker any
 	if verified {
 		marker = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -32,9 +36,9 @@ func insertLog(ctx context.Context, db *bun.DB, device *entity.Device, seq int, 
 	_, err := db.ExecContext(ctx, `INSERT INTO device_logs (imei, ownership_id, key_id, seq, type,
 		canonicalization, canonical_payload, payload, payload_hash, prev_hash, signature, collected_at, received_at, signature_verified_at)
 		VALUES (?, ?, ?, ?, 'status', 'test', ?, ?::jsonb, sha256(convert_to(?, 'UTF8')),
-		(SELECT payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), '2000-01-01', '2000-01-01', ?)`,
+		(SELECT payload_hash FROM device_logs WHERE imei=? ORDER BY seq DESC LIMIT 1), decode('01','hex'), ?, '2000-01-01', ?)`,
 		device.IMEI, device.OwnershipID, device.KeyID, seq, `{"seq":`+strconv.Itoa(seq)+`}`, `{"seq":`+strconv.Itoa(seq)+`}`,
-		`{"seq":`+strconv.Itoa(seq)+`}`, device.IMEI, marker)
+		`{"seq":`+strconv.Itoa(seq)+`}`, device.IMEI, collectedAt, marker)
 	return err
 }
 

@@ -16,10 +16,13 @@ func preflightBaseline(dsn string) error {
 	defer database.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	return preflightBaselineDB(ctx, database)
+}
+
+func preflightBaselineDB(ctx context.Context, database *sql.DB) error {
 	var legacy bool
-	err = database.QueryRowContext(ctx, `SELECT (to_regclass('public.devices') IS NOT NULL AND NOT EXISTS
- (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='public_id'))
- OR EXISTS (SELECT 1 FROM schema_migrations WHERE version>1)`).Scan(&legacy)
+	err := database.QueryRowContext(ctx, `SELECT (to_regclass('public.devices') IS NOT NULL AND NOT EXISTS
+ (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' AND column_name='public_id'))`).Scan(&legacy)
 	if err != nil {
 		return fmt.Errorf("cannot inspect database schema")
 	}

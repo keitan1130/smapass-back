@@ -63,7 +63,7 @@ func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, in
 	err = tx.NewRaw(`SELECT s.manufacturer,s.model,s.device_name,s.soc,s.cpu_cores,s.ram_bytes,
 			s.storage_bytes,s.screen_size_inch,s.screen_density_dpi,s.collected_at
 			FROM device_specs s JOIN device_logs l ON l.id=s.log_id
-			WHERE s.imei=? ORDER BY l.seq DESC LIMIT 1`, primary).Scan(ctx, &spec)
+			WHERE s.imei=? ORDER BY l.collected_at DESC,l.seq DESC LIMIT 1`, primary).Scan(ctx, &spec)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func readState(ctx context.Context, tx bun.IDB, id string, limit, offset int, in
 		state.Spec = &spec
 	}
 	var status dto.StatusRecord
-	err = statusQuery(tx, &status).Where("s.imei=?", primary).OrderExpr("l.seq DESC").Limit(1).Scan(ctx)
+	err = statusQuery(tx, &status).Where("s.imei=?", primary).OrderExpr("l.collected_at DESC,l.seq DESC").Limit(1).Scan(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}

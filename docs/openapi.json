@@ -1590,7 +1590,7 @@
     },
     "/api/devices": {
       "get": {
-        "description": "Display API. UUIDs only; use /api/devices/search?imeis=... first. Deduplicates UUIDs, sorts by UUID, omits unknown devices and returns items: [] when none match. Latest summaries exclude history.",
+        "description": "Display API. UUIDs only; use /api/devices/search?imeis=... first. Deduplicates UUIDs, sorts by UUID, omits unknown devices and returns items: [] when none match. Latest summaries exclude history. Specs and status are selected independently by collected_at descending, then sequence descending for equal timestamps. Late older observations remain in history without replacing current observations; history and evidence retain sequence order. last_collected_at is the maximum collection time across all log types, not necessarily the status collection time.",
         "operationId": "listDevices",
         "parameters": [
           {
@@ -2048,7 +2048,7 @@
     },
     "/api/devices/{id}": {
       "get": {
-        "description": "Public live certificate by stable device UUID. Includes latest known observations, last collection time, demo flag and paginated status history across all registrants. Missing observations are null; a known device without measurements has an empty history. Registration release does not hide history. No owner identity, credentials, private attestation is returned. This response alone is not proof of verification.",
+        "description": "Public live certificate by stable device UUID. Includes latest known observations, last collection time, demo flag and paginated status history across all registrants. Missing observations are null; a known device without measurements has an empty history. Registration release does not hide history. No owner identity, credentials, private attestation is returned. This response alone is not proof of verification. Specs and status are selected independently by collected_at descending, then sequence descending for equal timestamps. Late older observations remain in history without replacing current observations; history and evidence retain sequence order. last_collected_at is the maximum collection time across all log types, not necessarily the status collection time.",
         "operationId": "getDevice",
         "parameters": [
           {
