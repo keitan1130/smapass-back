@@ -5,3 +5,6 @@ bin
 tmp
 coverage.out
 docs
+secrets
+*.p12
+*.pem

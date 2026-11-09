@@ -6,7 +6,7 @@
 - `curl`。Makefile を使う場合は `make`。
 - ホストで Go のテストや開発を行う場合だけ Go 1.27.3。Docker ビルドも同じバージョンを指定。
 
-Go・PostgreSQL は Compose 内で動く。S3、AWS の認証情報、Node.js、チェーンのウォレットや RPC キーはこの段階では不要。
+Go・PostgreSQL は Compose 内で動く。S3、AWS の認証情報、Node.js、チェーンの認証情報は API の起動には不要。Tapyrus アンカーワーカーを動かす場合だけ、`.env` に `TAPYRUS_API_URL` / `TAPYRUS_ACCESS_TOKEN` を設定し、`openssl pkcs12 -in <file>.p12 -out secrets/tapyrus-client.pem -nodes -clcerts` で証明書を置いてから `make anchor` を実行する。
 
 ## 初回起動
 

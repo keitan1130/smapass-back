@@ -1,10 +1,10 @@
 # 署名と改ざん検証の設計
 
-この雛形は、署名対象データを失わず保存し、参照 API で返すための土台を作る。計測ログのRFC 8785 JCS形式・ECDSA署名の検証と保存は実装済み。チェーン送信・RPC照合は未実装。鍵登録時の Android attestation と秘密鍵保有の署名検証は実装済みで、条件は [Android 鍵登録](android-key-registration.md) を参照。
+この雛形は、署名対象データを失わず保存し、参照 API で返すための土台を作る。計測ログのRFC 8785 JCS形式・ECDSA署名の検証と保存、Tapyrus へのアンカー送信と承認確認（アンカーワーカー）は実装済み。ブラウザでの RPC 照合は Web の担当で未実装。鍵登録時の Android attestation と秘密鍵保有の署名検証は実装済みで、条件は [Android 鍵登録](android-key-registration.md) を参照。
 
 ## 参照資料の違い
 
-添付 SQL は Tapyrus の Merkle root 方式、Web の [features/verification.md](../../smapass-web/docs/features/verification.md) は Ethereum Sepolia の直接照合を提案している。どちらかを勝手に確定せず、DB にチェーン識別子と Merkle 情報を用意した。チェーンを抽象化した API が完成したという意味ではない。
+添付 SQL は Tapyrus の Merkle root 方式、Web の [features/verification.md](../../smapass-web/docs/features/verification.md) は Ethereum Sepolia の直接照合を提案していた。#19 で back は Tapyrus（Chaintope Tapyrus API）の Merkle root 方式を実装した。Web の文書は Sepolia 前提のままなので、照合の実装前に Web と共有する。
 
 ## 正本の扱い
 
@@ -21,19 +21,31 @@
 
 JSON のキーを独自にソートするだけで RFC 8785 対応としない。浮動小数点、大きな整数、Unicode、改行、負のゼロを含む共通テストベクタを Kotlin / Go / ブラウザで共有する。[共通署名ベクタ](examples/measurement-vector.json) とGoの回帰テストを用意した。Android・ブラウザ実装での実行は未確認。Web の文書の例示ハッシュは採用前に再計算して検証する。
 
-## アンカー方式で合意すること
+## Tapyrus アンカー（#19）
 
-| 未決事項 | 必要な取り決め |
+チェーンに載せるのはログ本体ではなく、複数ログの `payload_hash` から作った Merkle root（32バイト）だけ。アンカーワーカー（`cmd/anchor`）が API サーバーとは別プロセスで動き、外部 API は DB トランザクションの外で呼ぶ。
+
+1. ログ受信 API が署名を検証し、`canonical_payload` と SHA-256 を保存する（`log_anchors` に行がない＝未送信）。
+2. ワーカーが一定間隔（既定10分）で、`signature_verified_at` のある未アンカーのログを受信順に最大1000件まとめ、`anchors`（`pending`）と `log_anchors`（leaf index・proof）を1トランザクションで作る。デモ・未検証ログは対象外。
+3. 送信前に `submitting` にしてから `POST /api/v2/timestamps` を呼ぶ。`id` と txid を受け取ったら `submitted`（未承認）。
+4. `GET /api/v2/timestamps/{id}` を定期確認（既定30秒）し、`status: confirmed` かつ txid・`block_height`・`block_time` が揃ったら `confirmed` にしてブロック情報を保存する。
+
+| 項目 | 決定内容 |
 | --- | --- |
-| ネットワーク | Tapyrus / Sepolia、network ID / chain ID、最終性の基準 |
-| 記録単位 | ログごと / 証明書ごとの Merkle root / バッチ |
-| leaf / node | ハッシュの対象・並び順・domain separation、奇数 leaf の処理、proof の左右 |
-| Ethereum を使う場合 | contract address、ABI、event と root / leaf の対応、ブロック番号 |
-| 再送と障害 | idempotency key、送信済み tx の再確認、retry / backoff、reorg、失敗と pending の区別 |
+| ネットワーク | Tapyrus。Chaintope Tapyrus API の timestamp v2。`anchors.chain` は `ANCHOR_CHAIN`（既定 `tapyrus`）。承認済みの基準は API が `confirmed` を返しブロック高・時刻があること |
+| 記録方式 | `type: simple`、`digest: none`、`prefix: 736d617061737301`（ASCII `smapass` ＋版 0x01）、`content` は Merkle root の hex。トランザクションには `OP_RETURN 736d617061737301<merkle_root>` がそのまま入る |
+| 記録単位 | 一定間隔ごとのバッチ。1ログは1つのアンカーにだけ属する（`log_anchors.log_id` が主キー） |
+| leaf / node | `smapass-merkle-v1`。leaf = SHA-256(0x00 ‖ payload_hash)、node = SHA-256(0x01 ‖ left ‖ right)。leaf の並びは `leaf_index`。奇数個の最後の node は複製せずそのまま上の段へ上げる |
+| proof | 下から順の兄弟 hash の配列。`side: "left"` は node = H(0x01 ‖ sibling ‖ current)、`"right"` は H(0x01 ‖ current ‖ sibling)。テストベクタは `pkg/merkle/merkle_test.go`（payload_hash = SHA-256(0x00) / (0x01) / (0x02) の3件で root = `d1f13800…629f`） |
+| 再送と障害 | 送信前に `submitting` を記録する。`submitting` のまま残った行は、再送前に一覧 API で同じ prefix・content の記録を探して二重送信を防ぐ。5xx・429・401/403・通信エラーは指数バックオフ（30秒〜1時間）で再試行。400/404/422 や内容の不一致は `failed` にして人が判断する |
+| 状態 | `pending` / `submitting` / `submitted` / `confirmed` / `failed`。公開 API の `anchor_state` では `submitting` / `submitted` を `pending` として返し、ブロックに入る前を承認済みと返さない |
+| 認証 | アクセストークン（`TAPYRUS_ACCESS_TOKEN`）とクライアント証明書（PKCS#12 を PEM に変換、`secrets/tapyrus-client.pem`）の両方が必要。どちらもコミットしない |
 | 計測ログ署名 | バージョン1は端末UUID入りのJCS envelope・P-256 SHA256withECDSA・標準Base64のASN.1 DER。鍵登録・交代・初期化後再登録は [Android 鍵登録](android-key-registration.md) を参照 |
 | 公開範囲 | 公開ログから除外する情報と、公開可能な署名 envelope |
 
-`anchors.confirmed` はサーバーが保存した状態であり、ブラウザ検証の結果ではない。ブラウザは canonical_payload の SHA-256 を計算し、別経路の RPC で取得したチェーン情報と照合する。「一致」「不一致」「照合できず」を区別する。チェーンにハッシュがあっても計測値自体の真実性は保証しない。
+未決：Web がブラウザから Tapyrus のトランザクションを読む経路（エクスプローラー / RPC）、`failed` になったアンカーのログを再度まとめ直す手順、本番とテスト環境のネットワークの区別。
+
+`anchors.confirmed` はサーバーが保存した状態であり、ブラウザ検証の結果ではない。ブラウザは canonical_payload の SHA-256 を計算し、`merkle_proof` で root まで計算し直し、別経路で取得したトランザクションの OP_RETURN（prefix ＋ root）と照合する。「一致」「不一致」「照合できず」を区別する。チェーンにハッシュがあっても計測値自体の真実性は保証しない。
 
 ## 個人情報
 

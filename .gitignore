@@ -37,3 +37,7 @@ go.work.sum
 /tmp/
 .env.*
 !.env.example
+
+# Tapyrus client certificate / key
+secrets/
+*.p12

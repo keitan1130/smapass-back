@@ -1,4 +1,4 @@
-.PHONY: up dev down logs migrate seed smoke fmt fmt-check generate generate-check test test-race test-integration vet build check
+.PHONY: up anchor dev down logs migrate seed smoke fmt fmt-check generate generate-check test test-race test-integration vet build check
 
 GO ?= go
 DEV_COMPOSE = docker compose -f compose.yaml -f compose.dev.yaml
@@ -11,6 +11,8 @@ down:
 	docker compose down
 logs:
 	docker compose logs -f app migrate db
+anchor:
+	docker compose --profile anchor up -d --build anchor
 migrate:
 	docker compose run --rm --build migrate up
 seed:
