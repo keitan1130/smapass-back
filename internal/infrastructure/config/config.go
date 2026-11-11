@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -12,6 +13,7 @@ type Config struct {
 	HTTPAddr               string
 	DBDSN                  string
 	CORSOrigins            []string
+	TrustedProxyCIDRs      []netip.Prefix
 	AttestationPackage     string
 	AttestationDigests     []string
 	AttestationRequireIMEI bool
@@ -38,6 +40,15 @@ func Load() (Config, error) {
 	}
 	if c.DBDSN == "" {
 		return Config{}, fmt.Errorf("DB_DSN is required")
+	}
+	if value := strings.TrimSpace(os.Getenv("TRUSTED_PROXY_CIDRS")); value != "" {
+		for _, item := range strings.Split(value, ",") {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(item))
+			if err != nil || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
+				return Config{}, fmt.Errorf("TRUSTED_PROXY_CIDRS must contain explicit IPv4 or IPv6 CIDRs, not all-address ranges")
+			}
+			c.TrustedProxyCIDRs = append(c.TrustedProxyCIDRs, prefix.Masked())
+		}
 	}
 	for _, origin := range strings.Split(os.Getenv("CORS_ORIGINS"), ",") {
 		origin = strings.TrimSpace(origin)
