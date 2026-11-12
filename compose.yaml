@@ -31,6 +31,37 @@ services:
       retries: 10
       start_period: 10s
 
+  # Tapyrus anchor worker. Not started by default: docker compose --profile anchor up -d anchor
+  anchor:
+    image: smapass-back:local
+    entrypoint: ["anchor"]
+    profiles: ["anchor"]
+    # Run as the host user so a 600 client certificate stays readable without loosening it.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      DB_DSN: ${DB_DSN:?copy .env.example to .env}
+      TAPYRUS_API_URL: ${TAPYRUS_API_URL:-}
+      TAPYRUS_ACCESS_TOKEN: ${TAPYRUS_ACCESS_TOKEN:-}
+      TAPYRUS_CLIENT_CERT_FILE: /run/secrets/tapyrus-client.pem
+      ANCHOR_CHAIN: ${ANCHOR_CHAIN:-tapyrus}
+      ANCHOR_BATCH_INTERVAL: ${ANCHOR_BATCH_INTERVAL:-10m}
+      ANCHOR_POLL_INTERVAL: ${ANCHOR_POLL_INTERVAL:-30s}
+      ANCHOR_MAX_LEAVES: ${ANCHOR_MAX_LEAVES:-1000}
+    volumes:
+      # Create it first (see .env.example); a missing file stops startup instead of creating a directory.
+      - type: bind
+        source: ./secrets/tapyrus-client.pem
+        target: /run/secrets/tapyrus-client.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   migrate:
     <<: *app
     entrypoint: ["migrate"]

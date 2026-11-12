@@ -59,6 +59,6 @@ docker compose exec -T db sh -c 'pg_restore --exit-on-error --no-owner -U "$POST
 
 `docker compose down` で DB ボリュームは残る。ボリューム削除・初期 migration の down は全データを失う操作なので通常手順に含めない。
 
-この Compose は単一ホストの開発用。本番デプロイ、TLS、secret 管理、DB ロール分離、チェーン worker、監視、バックアップの保管先・復旧目標は別途設計する。
+この Compose は単一ホストの開発用。本番デプロイ、TLS、secret 管理（Tapyrus のトークン・クライアント証明書を含む）、DB ロール分離、アンカーワーカーの多重起動と監視、監視、バックアップの保管先・復旧目標は別途設計する。
 
 認証情報のテーブルもバックアップに含まれる。現在のトークンのハッシュだけでなく、再利用を検知する更新履歴と失効状態もまとめて復元する。古いバックアップへの切り戻しは認証状態も巻き戻るため、復旧時は必要に応じて `app_installations` の認証情報を失効させる。認証情報の失効と端末登録の終了は別操作で、詳細は [authentication.md](authentication.md) を参照。

@@ -33,6 +33,16 @@ services:
       retries: 10
       start_period: 10s
 
+  # Tapyrus の設定・証明書を用意し、--profile anchor を指定した場合だけ起動する。
+  anchor:
+    extends:
+      file: compose.yaml
+      service: anchor
+    image: smapass-back:demo
+    build:
+      context: .
+      dockerfile: docker/app.dockerfile
+
   migrate:
     <<: *app
     entrypoint: [migrate]

@@ -11,7 +11,7 @@
 | `device_specs`, `device_status` | 元ログから作る最新表示・履歴用の投影 |
 | `app_installations`, `app_tokens` | ログインなしの端末認証。トークンのハッシュと更新・再利用検知 |
 | `key_registration_challenges` | 初回登録・鍵交換の期限付きチャレンジと消費状態 |
-| `anchors`, `log_anchors` | 検証APIが返すチェーン・Merkle情報。チェーン送信自体は未実装 |
+| `anchors`, `log_anchors` | Tapyrus に記録した Merkle root、送信状態（`pending` / `submitting` / `submitted` / `confirmed` / `failed`）、Tapyrus API の timestamp ID（`provider_ref`）、txid、ブロック高・時刻、再試行回数と次回時刻。ログごとの leaf index と proof。000002 で送信状態とブロック情報を追加 |
 
 最新値と履歴は全登録期間を対象にし、端末UUIDと端末全体の連番を引き継ぐ。関連テーブルはIMEIを複製せず、`device_id` の外部キーで参照する。過去の鍵は署名検証に必要なので削除しない。過去の登録期間・更新済みトークンも権限と再利用検知に必要。`canonical_payload` のUTF-8が署名の正本であり、JSONBから作り直さない。DBトリガーはログの連番・前ハッシュ・現登録と鍵の有効性を検査する。署名はアプリ層で検証し、検証済み受信時刻で3日ルールを更新する。
 

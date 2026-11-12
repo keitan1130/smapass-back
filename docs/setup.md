@@ -6,7 +6,7 @@
 - `curl`。Makefile を使う場合は `make`。
 - ホストで Go のテストや開発を行う場合だけ Go 1.27.3。Docker ビルドも同じバージョンを指定。
 
-Go・PostgreSQL は Compose 内で動く。S3、AWS の認証情報、Node.js、チェーンのウォレットや RPC キーはこの段階では不要。
+Go・PostgreSQL は Compose 内で動く。S3、AWS の認証情報、Node.js、チェーンの認証情報は API の起動には不要。Tapyrus アンカーワーカーを動かす場合だけ、`.env` に `TAPYRUS_API_URL` / `TAPYRUS_ACCESS_TOKEN` を設定し、`openssl pkcs12 -in <file>.p12 -out secrets/tapyrus-client.pem -nodes -clcerts` で証明書を置いてから `make anchor` を実行する。
 
 ## 初回起動
 
@@ -33,6 +33,47 @@ curl -f 'http://localhost:8080/api/devices/search?imeis=000000000094821'
 デモ投入は登録者を変更する前なら繰り返し可能で、既存デモ行は上書きしない。28件の架空の status 記録を持つ。JCS、署名、チェーン照合のテストデータではない。
 
 UUID主キーのスキーマは新規DB向けの初期定義1本。既存DBの変換や自動削除は行わない。
+
+## デモ公開構成で Tapyrus ワーカーを使う
+
+`compose.demo.yaml` には `anchor` サービスを組み込んでいる。`--profile anchor` を指定した場合だけ起動し、デモ構成の DB・ネットワーク・イメージを共有する。追加の Compose ファイルは不要。ホスト上の cloudflared は引き続き API の `127.0.0.1:8080` に接続する。ワーカー用のポート公開や Tunnel のルート追加は不要。
+
+既存の `.env.demo` の DB・Android・公開 Origin・ネットワーク設定を保持し、次を追加する。`HOST_UID` / `HOST_GID` は証明書を配置するユーザーの `id -u` / `id -g` の結果に合わせる。
+
+```ini
+HOST_UID=1000
+HOST_GID=1000
+TAPYRUS_API_URL=https://YOUR_APP_ID.api.tapyrus.chaintope.com
+TAPYRUS_ACCESS_TOKEN='自分用のアクセストークン'
+ANCHOR_CHAIN=tapyrus
+ANCHOR_BATCH_INTERVAL=10m
+ANCHOR_POLL_INTERVAL=30s
+ANCHOR_MAX_LEAVES=1000
+```
+
+URL はダッシュボードで指定された接続先を使い、末尾の `/api/v1` や `/api/v2` を除く。ワーカーが `/api/v2/timestamps` を付ける。`ANCHOR_CHAIN` は保存用の識別名であり、接続先ネットワークを検証する設定ではない。
+
+取得したクライアント証明書を `secrets/tapyrus-client.p12` に配置し、次を実行する。PKCS#12 のパスワードは OpenSSL の入力要求時に入力し、環境変数への追加は不要。
+
+```bash
+mkdir -p secrets
+chmod 700 secrets
+chmod 600 .env.demo secrets/tapyrus-client.p12
+openssl pkcs12 -in secrets/tapyrus-client.p12 -out secrets/tapyrus-client.pem -nodes -clcerts
+chmod 600 secrets/tapyrus-client.pem
+
+docker compose --env-file .env.demo -f compose.demo.yaml --profile anchor config --quiet
+docker compose --env-file .env.demo -f compose.demo.yaml --profile anchor up -d --build --wait
+docker compose --env-file .env.demo -f compose.demo.yaml --profile anchor ps -a
+docker compose --env-file .env.demo -f compose.demo.yaml --profile anchor logs --tail=100 anchor
+curl -f http://127.0.0.1:8080/ready
+```
+
+今後の更新も同じ `--profile anchor up -d --build --wait` を使う。Tapyrus の認証情報はワーカーだけに渡し、API・migrate・DB には渡さない。証明書は読み取り専用でマウントし、未配置なら起動時に失敗する。`restart: unless-stopped` で Docker の再起動後も復帰する。
+
+公開状態の端末の `/api/devices/{UUID}/records` で `anchor_state`・`transaction_hash`・Merkle proof を確認する。署名検証済みの未アンカーログだけが対象となり、架空のデモ seed は送信されない。`/ready` の成功だけではチェーンへの接続や承認成功を意味しない。利用環境の有効期限・送信上限は管理者に確認する。
+
+停止する場合も `--env-file .env.demo -f compose.demo.yaml --profile anchor` を指定する。DB を保持するため `down -v` は実行しない。
 
 ## 設定
 

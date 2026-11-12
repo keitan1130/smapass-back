@@ -54,7 +54,7 @@ UUIDはDB主キー・URL・署名対象で共通の端末識別子で、アク�
 
 各記録は連番・種別・計測日時、`canonical_payload`、SHA-256 hex、前ハッシュ、Base64署名、公開鍵・署名方式・正規化方式、アンカー状態・チェーン・トランザクション・Merkle情報を持つ。署名対象はJSON文字列をデコードしたUTF-8をそのまま使用し、JSONBやAPI応答を再シリアライズしない。
 
-`unanchored` / `pending` / `confirmed` / `failed` は保存状態であり、ブラウザの検証結果ではない。未記録のチェーン情報はnull、proofは空配列。チェーン送信・外部RPC照合は未実装。デモの `demo-json-sort-v1` / `demo-not-a-signature` は実署名として検証しない。
+`unanchored` / `pending` / `confirmed` / `failed` は保存状態であり、ブラウザの検証結果ではない。送信中・ブロック待ちは `pending`。`confirmed` はブロックに入ったことをサーバーが確認した状態。未記録のチェーン情報はnull、proofは空配列。Merkle と OP_RETURN の形式は [verification.md](verification.md)。外部での照合は Web の担当で未実装。デモの `demo-json-sort-v1` / `demo-not-a-signature` は実署名として検証しない。
 
 ## アプリ用の認証・書き込み
 

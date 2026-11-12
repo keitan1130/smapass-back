@@ -31,7 +31,10 @@ func readRecords(ctx context.Context, tx bun.IDB, id string, limit, offset int) 
 	rows, err := tx.QueryContext(ctx, `SELECT l.seq, l.type, l.collected_at, l.canonical_payload,
 		encode(l.payload_hash, 'hex'), encode(l.prev_hash, 'hex'), encode(l.signature, 'base64'),
 		k.public_key, k.signature_algorithm, l.canonicalization,
-		COALESCE(a.status, 'unanchored'), a.chain, a.tx_id, encode(a.merkle_root, 'hex'),
+		CASE WHEN a.status IS NULL THEN 'unanchored'
+			WHEN a.status IN ('submitting', 'submitted') THEN 'pending'
+			ELSE a.status END,
+		a.chain, a.tx_id, encode(a.merkle_root, 'hex'),
 		la.leaf_index, COALESCE(la.merkle_proof, '[]'::jsonb)
 		FROM device_logs l
 		JOIN device_keys k ON k.id = l.key_id
