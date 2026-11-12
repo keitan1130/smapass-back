@@ -24,6 +24,7 @@ func InitializeApp(ctx context.Context, cfg config.Config) (*echo.Echo, func(), 
 	}
 	health := controller.NewHealthController(usecase.NewHealthUsecase(database))
 	app := router.New(health, cfg.CORSOrigins)
+	app.IPExtractor = router.CloudflareIPExtractor(cfg.TrustedProxyCIDRs)
 	verifier, err := attestation.NewVerifier(attestation.Policy{PackageName: cfg.AttestationPackage, SigningDigests: cfg.AttestationDigests, RequireIMEI: cfg.AttestationRequireIMEI}, attestation.NewGoogleStatus())
 	if err != nil {
 		_ = database.Close()
